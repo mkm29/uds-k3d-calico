@@ -1,0 +1,313 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/zarf/main/zarf.schema.json
+
+kind: ZarfPackageConfig
+metadata:
+  name: uds-k3d
+  description: "UDS K3d Cluster Setup. WARNING: This will destroy the cluster if it already exists."
+  url: https://github.com/defenseunicorns/uds-k3d
+  yolo: true
+  # x-release-please-start-version
+  version: "0.14.2-calico"
+  # x-release-please-end
+
+variables:
+  - name: CLUSTER_NAME
+    description: "Name of the cluster"
+    default: "uds-calico"
+
+  - name: K3D_IMAGE
+    description: "K3d image to use"
+    default: "rancher/k3s:v1.32.5-k3s1"
+
+  - name: K3D_EXTRA_ARGS
+    description: "Optionally pass k3d arguments to the default"
+    default: ""
+
+  - name: NGINX_EXTRA_PORTS
+    description: "Optionally allow more ports through Nginx (combine with K3D_EXTRA_ARGS '-p <port>:<port>@server:*')"
+    default: "[]"
+
+  - name: DOMAIN
+    description: "Cluster domain"
+    default: "uds.dev"
+
+  - name: ADMIN_DOMAIN
+    description: "Domain for admin services, defaults to `admin.DOMAIN`"
+
+components:
+  - name: destroy-cluster
+    required: true
+    description: "Optionally destroy the cluster before creating it"
+    actions:
+      onDeploy:
+        before:
+          - cmd: k3d cluster delete ${ZARF_VAR_CLUSTER_NAME}
+            description: "Destroy the cluster"
+
+  - name: k3d-airgap-images
+    required: true
+    only:
+      flavor: airgap
+    description: "Load the airgap images for k3d into Docker"
+    import:
+      path: airgap/k3d
+      name: k3d-airgap-images
+
+  - name: create-cluster-airgap
+    required: true
+    only:
+      flavor: airgap
+    actions:
+      onDeploy:
+        before:
+          - cmd: |
+              echo ""
+              echo "###################################################"
+              echo "#                                                 #"
+              echo "#      PACKAGE BEING DEPLOYED IN AIRGAP MODE      #"
+              echo "#    THIS IS NOT MEANT TO BE USED IN PRODUCTION   #"
+              echo "#                                                 #"
+              echo "###################################################"
+              echo ""
+          - cmd: echo "true"
+            description: "Set AIRGAP_MODE to true"
+            mute: true
+            setVariables:
+              - name: AIRGAP_MODE
+
+  - name: create-cluster
+    required: true
+    description: "Create the k3d cluster"
+    actions:
+      onDeploy:
+        before:
+          - cmd: |
+              k3d_version=$(k3d version | grep -E -o "([0-9]+\.?){3}$")
+              required_version="5.7.1"
+              if ! printf "$required_version\n$k3d_version" | sort -V -c 2>/dev/null; then
+                echo "This package requires a minimum k3d version of $required_version"
+                echo "Please upgrade k3d (https://k3d.io/stable/#install-current-latest-release) and try again"
+                exit 1
+              fi
+            description: "Check k3d version compatibility"
+          - cmd: |
+              VOLUME_MOUNT=""
+              if [ "${ZARF_VAR_AIRGAP_MODE}" = "true" ]; then
+                # renovate: datasource=docker depName=ghcr.io/k3d-io/k3d-tools
+                export K3D_HELPER_IMAGE_TAG=5.8.3
+                VOLUME_MOUNT="--volume k3s-airgap-images:/var/lib/rancher/k3s/agent/images"
+              fi
+              k3d cluster create \
+              -p "80:80@server:*" \
+              -p "443:443@server:*" \
+              --k3s-arg "--tls-san=127.0.0.1@server:*" \
+              --k3s-arg "--tls-san=localhost@server:*" \
+              --k3s-arg "--tls-san=*.${ZARF_VAR_DOMAIN}@server:*" \
+              --k3s-arg "--tls-san=0.0.0.0@server:*" \
+              --k3s-arg "--disable=traefik@server:*" \
+              --k3s-arg "--disable=metrics-server@server:*" \
+              --k3s-arg "--disable=servicelb@server:*" \
+              --k3s-arg "--disable=local-storage@server:*" \
+              --k3s-arg "--disable-network-policy@server:*" \
+              --k3s-arg "--cluster-cidr=10.42.0.0/16@server:*" \
+              --k3s-arg "--service-cidr=10.96.0.0/16@server:*" \
+              --servers 1 \
+              --agents 2 \
+              --subnet 10.0.0.0/10 \
+              --image ${ZARF_VAR_K3D_IMAGE} ${ZARF_VAR_K3D_EXTRA_ARGS} \
+              ${VOLUME_MOUNT} \
+              ${ZARF_VAR_CLUSTER_NAME}
+            description: "Create the cluster"
+        onSuccess:
+          # Wait for CoreDNS to be available with default Flannel CNI
+          - wait:
+              cluster:
+                kind: Pod
+                condition: Ready
+                name: "k8s-app=kube-dns"
+                namespace: kube-system
+            description: "Wait for CoreDNS to be ready"
+
+  - name: install-calico
+    required: true
+    description: "Install Calico CNI v1.29.0"
+    manifests:
+    - name: calico-crds
+      namespace: default
+      files:
+        - manifests/custom-resources.yaml
+    - name: tigera-operator
+      namespace: default
+      files:
+        - manifests/tigera-operator.yaml
+    actions:
+      onDeploy:
+        before:
+          # Remove Flannel before installing Calico
+          - cmd: |
+              ./zarf tools kubectl delete daemonset kube-flannel-ds -n kube-flannel --ignore-not-found=true
+              ./zarf tools kubectl delete namespace kube-flannel --ignore-not-found=true
+            description: "Remove Flannel CNI"
+        after:
+          - wait:
+              cluster:
+                kind: tigerastatus
+                condition: Available
+                name: "apiserver"
+                namespace: default
+            description: "Wait for Calico API Server to be ready"
+          - wait:
+              cluster:
+                kind: tigerastatus
+                condition: Available
+                name: "calico"
+                namespace: default
+            description: "Wait for Calico to be ready"
+          - wait:
+              cluster:
+                kind: tigerastatus
+                condition: Available
+                name: "ippools"
+                namespace: default
+            description: "Wait for Calico IP pools to be ready"
+
+  - name: enable-ebpf
+    required: true
+    description: "Enable eBPF dataplane for Calico"
+    actions:
+      onDeploy:
+        before:
+          - cmd: |
+              ./zarf tools kubectl create configmap kubernetes-services-endpoint \
+                      --namespace tigera-operator \
+                      --from-literal=KUBERNETES_SERVICE_HOST=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}') \
+                      --from-literal=KUBERNETES_SERVICE_PORT=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}') \
+                      --dry-run=client -o yaml | ./zarf tools kubectl apply -f -
+            description: "Creating Kubernetes API server ConfigMap for eBPF"
+          - cmd: |
+              ./zarf tools kubectl -n tigera-operator patch installation default --type merge -p '{"spec":{"calicoNetwork":{"linuxDataplane":"BPF", "hostPorts":null}}}'
+            description: "Patching Calico installation to use eBPF"
+          - cmd: |
+              ./zarf tools kubectl patch felixconfiguration default --type='merge' -p '{"spec":{"bpfConnectTimeLoadBalancing": "Disabled", "bpfExternalServiceMode": "DSR"}}'
+            description: "Patching FelixConfiguration to set bpfConnectTimeLoadBalancing to Disabled and bpfExternalServiceMode to DSR (for Istio Ambient)"
+        after:
+          - wait:
+              cluster:
+                kind: tigerastatus
+                condition: Available
+                name: "apiserver"
+                namespace: default
+            description: "Wait for Calico API Server to be ready"
+          - wait:
+              cluster:
+                kind: tigerastatus
+                condition: Available
+                name: "calico"
+                namespace: default
+            description: "Wait for Calico to be ready"
+          - wait:
+              cluster:
+                kind: tigerastatus
+                condition: Available
+                name: "ippools"
+                namespace: default
+            description: "Wait for Calico IP pools to be ready"
+          - cmd: |
+              ./zarf tools kubectl get installation default -o jsonpath='{.spec.calicoNetwork.linuxDataplane}'
+            description: "Verifying Calico is set to use eBPF dataplane"
+
+  - name: connectivity-test
+    required: false
+    description: "Test pod-to-pod connectivity across nodes"
+    manifests:
+      - name: connectivity-test-resources
+        namespace: default
+        files:
+          - manifests/nginx.yaml
+          - manifests/busybox.yaml
+    actions:
+      onDeploy:
+        after:
+          - wait:
+              cluster:
+                kind: Deployment
+                condition: available
+                name: nginx
+                namespace: default
+            maxTotalSeconds: 60
+            description: "Wait for nginx deployment to be ready"
+          - wait:
+              cluster:
+                kind: Pod
+                condition: Ready
+                name: busybox
+                namespace: default
+            maxTotalSeconds: 60
+            description: "Wait for busybox pod to be ready"
+          - cmd: |
+              echo "Testing connectivity between pods across nodes..."
+              if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
+                echo "✅ Connectivity test PASSED - HTTP 200 received"
+                echo "Pods are running on the following nodes:"
+                ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
+                ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
+              else
+                echo "❌ Connectivity test FAILED - HTTP 200 not received"
+                exit 1
+              fi
+            description: "Test pod-to-pod connectivity"
+          - cmd: |
+              echo "Cleaning up test resources..."
+              ./zarf tools kubectl delete deployment nginx -n default --ignore-not-found=true
+              ./zarf tools kubectl delete service nginx -n default --ignore-not-found=true
+              ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
+            description: "Clean up connectivity test resources"
+
+  - name: uds-dev-stack-airgap-images
+    required: true
+    only:
+      flavor: airgap
+    description: "Load the airgap images for uds-dev-stack into Docker"
+    import:
+      path: airgap/uds-dev-stack
+      name: uds-dev-stack-airgap-images
+
+  - name: uds-dev-stack
+    required: true
+    description: "Install MetalLB, NGINX, Minio, local-path-rwx and Ensure MachineID to meet UDS developer needs without later config changes"
+    actions:
+      onDeploy:
+        before:
+          - cmd: ./zarf tools kubectl get nodes -o=jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' | cut -d'.' -f1-3
+            description: "Load network ip base for MetalLB"
+            setVariables:
+              - name: BASE_IP
+        after:
+          - cmd: ./zarf tools kubectl rollout restart deployment coredns -n kube-system
+            description: "Restart CoreDNS to pick up internal DNS override for uds.dev"
+    charts:
+      - name: metallb
+        namespace: uds-dev-stack
+        url: https://metallb.github.io/metallb
+        version: 0.15.2
+        valuesFiles:
+          - "values/metallb-values.yaml"
+      - name: uds-dev-stack
+        namespace: uds-dev-stack
+        localPath: chart
+        # x-release-please-start-version
+        version: 0.14.2
+        # x-release-please-end
+        valuesFiles:
+          - "values/dev-stack-values.yaml"
+        variables:
+          - name: COREDNS_OVERRIDES
+            # Defaults contain rewrites of `*.uds.dev` to the UDS core Istio tenant and admin gateways
+            description: "CoreDNS overrides"
+            path: coreDnsOverrides
+      - name: minio
+        namespace: uds-dev-stack
+        version: 5.4.0
+        url: https://charts.min.io/
+        valuesFiles:
+          - "values/minio-values.yaml"

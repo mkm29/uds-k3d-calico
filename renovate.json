@@ -1,0 +1,31 @@
+{
+  "extends": [
+    "github>defenseunicorns/uds-common//config/renovate.json5",
+    ":semanticCommits",
+    ":semanticPrefixFixDepsChoreOthers",
+    "replacements:all",
+    "workarounds:all"
+  ],
+  "packageRules": [
+    {
+      "matchFileNames": [
+        "chart/**",
+        "**/zarf.yaml",
+        "values/*.yaml"
+      ],
+      "groupName": "dev-stack",
+      "commitMessageTopic": "dev-stack",
+      "matchPackageNames": [
+        "!rancher/k3s"
+      ]
+    },
+    {
+      "matchFileNames": [
+        ".github/workflows/**",
+        ".github/actions/**"
+      ],
+      "groupName": "githubactions",
+      "commitMessageTopic": "githubactions"
+    }
+  ]
+}
