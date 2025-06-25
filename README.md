@@ -5,11 +5,44 @@
 
 This zarf package serves as a universal dev (local & remote) and test environment for testing [UDS Core](https://github.com/defenseunicorns/uds-core), individual UDS Capabilities, and UDS capabilities aggregated via the [UDS CLI](https://github.com/defenseunicorns/uds-cli).
 
+- [UDS K3d Calico Environment](#uds-k3d-calico-environment)
+  - [Overview](#overview)
+  - [Prerequisites](#prerequisites)
+    - [System Requirements](#system-requirements)
+  - [Architecture](#architecture)
+    - [K3d Cluster with Calico](#k3d-cluster-with-calico)
+  - [Configuration](#configuration)
+    - [Variables](#variables)
+    - [Components](#components)
+  - [Build and Deploy](#build-and-deploy)
+    - [Deploy](#deploy)
+    - [Deploy with Custom Settings](#deploy-with-custom-settings)
+    - [Calico CNI Configuration](#calico-cni-configuration)
+    - [CNI Migration Process](#cni-migration-process)
+    - [eBPF Dataplane](#ebpf-dataplane)
+    - [DNS Configuration](#dns-configuration)
+  - [Cluster Management](#cluster-management)
+    - [Stop and Start](#stop-and-start)
+    - [Remove](#remove)
+    - [Remote Access](#remote-access)
+  - [Verification](#verification)
+    - [Check Calico Installation](#check-calico-installation)
+    - [Run Validation Tests](#run-validation-tests)
+  - [Troubleshooting](#troubleshooting)
+    - [Calico Issues](#calico-issues)
+    - [Network Connectivity](#network-connectivity)
+  - [Advanced Configuration](#advanced-configuration)
+    - [Custom K3d Arguments](#custom-k3d-arguments)
+    - [Network Policies](#network-policies)
+  - [Additional Documentation](#additional-documentation)
+  - [Notes](#notes)
+  - [Resources](#resources)
+
 ## Overview
 
 The UDS K3d package creates a k3d cluster with the following features:
 
-- **K3d cluster** with 1 server node and 2 agent nodes by default
+- **K3d cluster** with configurable nodes (default: 1 server, 2 workers)
 - **Calico CNI v1.29.0** with Tigera Operator for advanced networking
 - **eBPF dataplane** support for optimal performance (enabled by default)
 - **VXLAN cross-subnet** encapsulation for pod-to-pod communication
@@ -18,6 +51,7 @@ The UDS K3d package creates a k3d cluster with the following features:
 - **Integration with UDS Core** including Istio service mesh support
 - **DNS resolution** for `*.uds.dev` domains via CoreDNS overrides
 - **UDS Dev Stack**: MetalLB, NGINX, MinIO, and local-path-rwx storage
+- **Configurable network CIDRs** for subnet, pod, and service networks
 
 ## Prerequisites
 
@@ -31,46 +65,6 @@ The UDS K3d package creates a k3d cluster with the following features:
 - **CPU**: 4+ cores recommended
 - **Disk**: 50GB+ available space
 - **Kernel**: Linux kernel 5.3+ (for eBPF dataplane)
-
-## Deploy
-
-<!-- x-release-please-start-version -->
-
-`uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2`
-
-<!-- x-release-please-end -->
-
-### Deploy with Custom Settings
-
-```bash
-# Deploy with custom K3s version
-uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
-  --set K3D_IMAGE=rancher/k3s:v1.32.5-k3s1
-
-# Deploy with additional ports
-uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
-  --set K3D_EXTRA_ARGS="-p 8080:8080@server:*" \
-  --set NGINX_EXTRA_PORTS="[8080]"
-```
-
-### Build and Deploy Locally
-
-```bash
-# Build the package
-uds run build
-
-# Deploy the locally built package
-uds run deploy
-
-# Run validation tests
-uds run validate
-
-# List existing k3d clusters
-uds run destroy
-
-# Destroy a specific cluster
-uds run destroy --set CLUSTER_NAME=uds-calico
-```
 
 ## Architecture
 
@@ -111,11 +105,124 @@ graph TB
 
 ## Configuration
 
+### Variables
+
+The following variables can be configured when deploying the UDS K3d package:
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| `CLUSTER_NAME` | Name of the cluster | `string` | `"uds-calico"` | no |
+| `SUBNET_CIDR` | Subnet CIDR for the cluster | `string` | `"10.0.0.0/10"` | no |
+| `POD_CIDR` | Pod CIDR for the cluster | `string` | `"10.42.0.0/16"` | no |
+| `SERVICE_CIDR` | Service CIDR for the cluster | `string` | `"10.96.0.0/16"` | no |
+| `K3D_IMAGE` | K3d image to use | `string` | `"rancher/k3s:v1.32.5-k3s1"` | no |
+| `K3D_EXTRA_ARGS` | Optionally pass k3d arguments to the default | `string` | `""` | no |
+| `NGINX_EXTRA_PORTS` | Optionally allow more ports through Nginx (combine with K3D_EXTRA_ARGS '-p &lt;port&gt;:&lt;port&gt;@server:*') | `string` | `"[]"` | no |
+| `DOMAIN` | Cluster domain | `string` | `"uds.dev"` | no |
+| `ADMIN_DOMAIN` | Domain for admin services, defaults to `admin.DOMAIN` | `string` | `""` | no |
+| `NUMBER_OF_SERVERS` | Number of server nodes | `string` | `"1"` | no |
+| `NUMBER_OF_AGENTS` | Number of worker nodes | `string` | `"2"` | no |
+| `EXTRA_TLS_SANS` | Additional TLS SANs for the cluster (comma-separated) | `string` | `"127.0.0.1"` | no |
+
+### Components
+
+The following components are available in the UDS K3d package:
+
+| Name | Description | Required |
+|------|-------------|:--------:|
+| `destroy-cluster` | Optionally destroy the cluster before creating it | yes |
+| `k3d-airgap-images` | Load the airgap images for k3d into Docker | yes¹ |
+| `create-cluster-airgap` | Required component for airgap deployments | yes¹ |
+| `create-cluster` | Create the k3d cluster | yes |
+| `install-calico` | Install Calico CNI v1.29.0 | yes |
+| `enable-ebpf` | Enable eBPF dataplane for Calico | yes |
+| `connectivity-test` | Test pod-to-pod connectivity across nodes | no |
+| `calico-airgap-images` | Load the airgap images for Calico into Docker | yes¹ |
+| `uds-dev-stack-airgap-images` | Load the airgap images for uds-dev-stack into Docker | yes¹ |
+| `uds-dev-stack` | Install MetalLB, NGINX, MinIO, local-path-rwx and Ensure MachineID | yes |
+
+¹ Only required when using the `airgap` flavor
+
+## Build and Deploy
+
+```bash
+# Build the package
+uds run build
+
+# Deploy the locally built package
+uds run deploy
+
+# Run validation tests
+uds run validate
+
+# List existing k3d clusters
+uds run destroy
+
+# Destroy a specific cluster
+uds run destroy --set CLUSTER_NAME=uds-calico
+```
+
+### Deploy
+
+<!-- x-release-please-start-version -->
+
+`uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2-calico`
+
+<!-- x-release-please-end -->
+
+### Deploy with Custom Settings
+
+```bash
+# Deploy with custom K3s version
+uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
+  --set K3D_IMAGE=rancher/k3s:v1.32.5-k3s1
+
+# Deploy with additional ports
+uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
+  --set K3D_EXTRA_ARGS="-p 8080:8080@server:*" \
+  --set NGINX_EXTRA_PORTS="[8080]"
+
+# Deploy with custom cluster sizing
+uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
+  --set NUMBER_OF_SERVERS=3 \
+  --set NUMBER_OF_WORKERS=4
+
+# Deploy with custom network CIDRs
+uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
+  --set SUBNET_CIDR="10.10.0.0/12" \
+  --set POD_CIDR="10.44.0.0/16" \
+  --set SERVICE_CIDR="10.97.0.0/16"
+
+# Deploy with additional TLS SANs for external access
+uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
+  --set EXTRA_TLS_SANS="192.168.1.100,my-k3s.example.com"
+```
+
+### Airgap Deployment
+
+For environments without internet access, use the airgap flavor:
+
+```bash
+# Build the airgap package
+uds run build-airgap-package
+
+# Deploy the airgap package
+uds run deploy-airgap-package
+```
+
+The airgap flavor includes all required images:
+
+- K3d/K3s base images
+- Calico CNI images (Tigera Operator, Calico components)
+- UDS Dev Stack images (MetalLB, NGINX, MinIO, local-path provisioner)
+
+See [Airgap Documentation](docs/AIRGAP.md) for more details.
+
 ### Calico CNI Configuration
 
 The UDS K3d package configures Calico with:
 
-- **IP Pool**: `10.42.0.0/16` (for Pods)
+- **IP Pool**: Uses the configured Pod CIDR (default: `10.42.0.0/16`)
 - **Block Size**: `/26` (64 IPs per Node)
 - **Encapsulation**: `VXLANCrossSubnet`
 - **NAT Outgoing**: Enabled

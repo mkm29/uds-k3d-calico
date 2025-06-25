@@ -13,28 +13,39 @@ All notable changes to this project will be documented in this file.
 * Configure VXLAN cross-subnet encapsulation for pod-to-pod communication
 * Enable container IP forwarding for proper pod connectivity
 * Add optional `connectivity-test` component for validating pod-to-pod communication across nodes using manifest files
+* Add configurable network CIDRs via variables: `SUBNET_CIDR`, `POD_CIDR`, `SERVICE_CIDR`
+* Add configurable cluster topology via variables: `NUMBER_OF_SERVERS`, `NUMBER_OF_WORKERS`
+* Add configurable TLS SANs via `EXTRA_TLS_SANS` variable for custom API server certificate SANs
+* Add `calico-airgap-images` component to support Calico deployment in air-gapped environments
 
 
 ### Breaking Changes
 
 * Changed default cluster name from `uds` to `uds-calico`
 * K3s network policies are disabled by default
-* Added explicit cluster and service CIDR configurations (`10.42.0.0/16` for pods and `10.96.0.0/16` for services)
-* Added subnet configuration `10.0.0.0/10`
-* Added node count configuration (1 server, 2 agents)
+* Network CIDRs are now configurable with defaults:
+  - Subnet: `10.0.0.0/10` (K3d internal network)
+  - Pod: `10.42.0.0/16` (Kubernetes pod network)
+  - Service: `10.96.0.0/10` (Kubernetes service network)
+* Cluster topology is now configurable with defaults:
+  - Number of servers: `1` (K3s server nodes)
+  - Number of workers: `2` (K3s agent nodes)
 
 
 ### Technical Changes
 
 * Added two new required components: `install-calico` and `enable-ebpf`
 * Added optional `connectivity-test` component that validates cross-node pod communication using manifests with pod anti-affinity
-* Added TLS SAN configurations for `127.0.0.1`, `localhost`, `*.uds.dev`, and `0.0.0.0`
+* TLS SANs are now configurable via `EXTRA_TLS_SANS` variable (default: `127.0.0.1`), replacing hardcoded values
 * Configured Felix with `bpfConnectTimeLoadBalancing: Disabled` and `bpfExternalServiceMode: DSR`
 * Added Calico manifests: `custom-resources.yaml` and `tigera-operator.yaml`
 * Implemented Flannel-to-Calico migration approach for seamless CNI transition
 * Updated all kubectl commands to use `./zarf tools kubectl` for consistency
 * Removed temporary kubeconfig file usage in eBPF component
 * Added `destroy` task in tasks.yaml that safely lists clusters or removes a specific cluster when CLUSTER_NAME is provided
+* Updated k3d cluster creation to use variable references for network CIDRs and node counts
+* Added `calico-airgap-images` Zarf package in `airgap/calico/` for downloading and loading all Calico CNI images
+* Updated airgap flavor to include Calico images alongside k3d and uds-dev-stack images
 
 
 ## [0.14.2](https://github.com/defenseunicorns/uds-k3d/compare/v0.14.1...v0.14.2) (2025-06-06)

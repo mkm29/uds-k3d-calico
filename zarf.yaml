@@ -2,9 +2,9 @@
 
 kind: ZarfPackageConfig
 metadata:
-  name: uds-k3d
-  description: "UDS K3d Cluster Setup. WARNING: This will destroy the cluster if it already exists."
-  url: https://github.com/defenseunicorns/uds-k3d
+  name: uds-k3d-calico
+  description: "UDS K3d Cluster Setup with eBPF Calico. WARNING: This will destroy the cluster if it already exists."
+  url: https://github.com/mkm29/uds-k3d-calico.git
   yolo: true
   # x-release-please-start-version
   version: "0.14.2-calico"
@@ -14,6 +14,18 @@ variables:
   - name: CLUSTER_NAME
     description: "Name of the cluster"
     default: "uds-calico"
+
+  - name: SUBNET_CIDR
+    description: "Subnet CIDR for the cluster"
+    default: "10.0.0.0/10"
+
+  - name: POD_CIDR
+    description: "Pod CIDR for the cluster"
+    default: "10.42.0.0/16"
+
+  - name: SERVICE_CIDR
+    description: "Service CIDR for the cluster"
+    default: "10.96.0.0/16"
 
   - name: K3D_IMAGE
     description: "K3d image to use"
@@ -33,6 +45,18 @@ variables:
 
   - name: ADMIN_DOMAIN
     description: "Domain for admin services, defaults to `admin.DOMAIN`"
+
+  - name: NUMBER_OF_SERVERS
+    description: "Number of server nodes"
+    default: "1"
+
+  - name: NUMBER_OF_AGENTS
+    description: "Number of worker nodes"
+    default: "2"
+
+  - name: EXTRA_TLS_SANS
+    description: "Additional TLS SANs for the cluster (comma-separated)"
+    default: "127.0.0.1"
 
 components:
   - name: destroy-cluster
@@ -100,20 +124,18 @@ components:
               k3d cluster create \
               -p "80:80@server:*" \
               -p "443:443@server:*" \
-              --k3s-arg "--tls-san=127.0.0.1@server:*" \
-              --k3s-arg "--tls-san=localhost@server:*" \
-              --k3s-arg "--tls-san=*.${ZARF_VAR_DOMAIN}@server:*" \
-              --k3s-arg "--tls-san=0.0.0.0@server:*" \
+              --api-port 6550 \
+              --k3s-arg "--tls-san=${ZARF_VAR_EXTRA_TLS_SANS}@server:*" \
               --k3s-arg "--disable=traefik@server:*" \
               --k3s-arg "--disable=metrics-server@server:*" \
               --k3s-arg "--disable=servicelb@server:*" \
               --k3s-arg "--disable=local-storage@server:*" \
               --k3s-arg "--disable-network-policy@server:*" \
-              --k3s-arg "--cluster-cidr=10.42.0.0/16@server:*" \
-              --k3s-arg "--service-cidr=10.96.0.0/16@server:*" \
-              --servers 1 \
-              --agents 2 \
-              --subnet 10.0.0.0/10 \
+              --k3s-arg "--cluster-cidr=${ZARF_VAR_POD_CIDR}@server:*" \
+              --k3s-arg "--service-cidr=${ZARF_VAR_SERVICE_CIDR}@server:*" \
+              --servers ${ZARF_VAR_NUMBER_OF_SERVERS} \
+              --agents ${ZARF_VAR_NUMBER_OF_AGENTS} \
+              --subnet ${ZARF_VAR_SUBNET_CIDR} \
               --image ${ZARF_VAR_K3D_IMAGE} ${ZARF_VAR_K3D_EXTRA_ARGS} \
               ${VOLUME_MOUNT} \
               ${ZARF_VAR_CLUSTER_NAME}
@@ -139,7 +161,7 @@ components:
     - name: tigera-operator
       namespace: default
       files:
-        - manifests/tigera-operator.yaml
+        - manifests/tigera-operator.yaml.tmpl
     actions:
       onDeploy:
         before:
@@ -181,8 +203,7 @@ components:
               ./zarf tools kubectl create configmap kubernetes-services-endpoint \
                       --namespace tigera-operator \
                       --from-literal=KUBERNETES_SERVICE_HOST=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}') \
-                      --from-literal=KUBERNETES_SERVICE_PORT=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}') \
-                      --dry-run=client -o yaml | ./zarf tools kubectl apply -f -
+                      --from-literal=KUBERNETES_SERVICE_PORT=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}')
             description: "Creating Kubernetes API server ConfigMap for eBPF"
           - cmd: |
               ./zarf tools kubectl -n tigera-operator patch installation default --type merge -p '{"spec":{"calicoNetwork":{"linuxDataplane":"BPF", "hostPorts":null}}}'
@@ -263,6 +284,15 @@ components:
               ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
             description: "Clean up connectivity test resources"
 
+  - name: calico-airgap-images
+    required: true
+    only:
+      flavor: airgap
+    description: "Load the airgap images for Calico into Docker"
+    import:
+      path: airgap/calico
+      name: calico-airgap-images
+
   - name: uds-dev-stack-airgap-images
     required: true
     only:
@@ -287,7 +317,7 @@ components:
             description: "Restart CoreDNS to pick up internal DNS override for uds.dev"
     charts:
       - name: metallb
-        namespace: uds-dev-stack
+        namespace: metallb-system
         url: https://metallb.github.io/metallb
         version: 0.15.2
         valuesFiles:

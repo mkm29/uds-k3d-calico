@@ -1,6 +1,10 @@
 # Airgap Flavor
 
-This package can be deployed fully airgapped by using the `airgap` flavor. All of the images required for the `k3d` cluster to spin up are loaded into `docker` using `docker load` before the cluster is created. Then all of the images required for the `uds-dev-stack` are loaded into the `k3d` cluster using `k3d image load`.
+This package can be deployed fully airgapped by using the `airgap` flavor. The airgap deployment process loads images in the following order:
+
+1. **K3d images**: Required for the k3d cluster to spin up, loaded into Docker using `docker load`
+2. **Calico CNI images**: All Tigera Operator and Calico component images are loaded into the k3d cluster
+3. **UDS Dev Stack images**: MetalLB, NGINX, MinIO, and other dev stack images are loaded using `k3d image load`
 
 ## Considerations
 

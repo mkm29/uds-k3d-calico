@@ -15,17 +15,17 @@ variables:
 
 tasks:
   - name: build
-    description: "Build uds-k3d"
+    description: "Build uds-k3d-calico package"
     actions:
       - description: "Build UDS K3d package"
         cmd: "uds zarf package create -a ${ARCH} --confirm --no-progress --skip-sbom"
 
   - name: deploy
-    description: "Deploy uds-k3d package"
+    description: "Deploy uds-k3d-calico package"
     actions:
       - description: "Deploy UDS K3d package"
         cmd: |
-          uds zarf package deploy zarf-package-uds-k3d-${ARCH}-*.tar.zst \
+          uds zarf package deploy zarf-package-uds-k3d-calico-${ARCH}-*.tar.zst \
             --set K3D_IMAGE=${IMAGE_NAME}:${VERSION} \
             --set K3D_EXTRA_ARGS="${K3D_EXTRA_ARGS}" \
             --set NGINX_EXTRA_PORTS="${NGINX_EXTRA_PORTS}" \
@@ -111,7 +111,7 @@ tasks:
     actions:
       - description: Deploy the airgap package
         cmd: |
-          uds zarf package deploy zarf-package-uds-k3d-${ARCH}-*.tar.zst --no-progress --confirm
+          uds zarf package deploy zarf-package-uds-k3d-calico-${ARCH}-*.tar.zst --no-progress --confirm
 
   - name: clean-airgap-images
     actions:

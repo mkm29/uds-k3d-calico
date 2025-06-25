@@ -1,0 +1,67 @@
+kind: ZarfPackageConfig
+metadata:
+  name: calico-airgap-images
+  yolo: true
+  description: >
+    *** REQUIRES DOCKER AND K3D CLUSTER ***
+    Loads the required images for deploying Calico CNI into k3d to be used offline.
+
+components:
+  - name: calico-airgap-images
+    files:
+      - source: calico-apiserver.tar
+        target: calico-apiserver.tar
+      - source: calico-kube-controllers.tar
+        target: calico-kube-controllers.tar
+      - source: calico-node.tar
+        target: calico-node.tar
+      - source: calico-pod2daemon-flexvol.tar
+        target: calico-pod2daemon-flexvol.tar
+      - source: calico-cni.tar
+        target: calico-cni.tar
+      - source: calico-typha.tar
+        target: calico-typha.tar
+      - source: calico-csi.tar
+        target: calico-csi.tar
+      - source: calico-node-driver-registrar.tar
+        target: calico-node-driver-registrar.tar
+      - source: tigera-operator.tar
+        target: tigera-operator.tar
+    actions:
+      onCreate:
+        before:
+          # renovate: datasource=docker depName=rancher/local-path-provisioner
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/apiserver:v3.29.0 calico-apiserver.tar
+            description: Pull the calico-apiserver image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/kube-controllers:v3.29.0 calico-kube-controllers.tar
+            description: Pull the calico-kube-controllers image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/node:v3.29.0 calico-node.tar
+            description: Pull the calico-node image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/pod2daemon-flexvol:v3.29.0 calico-pod2daemon-flexvol.tar
+            description: Pull the calico-pod2daemon-flexvol image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/cni:v3.29.0 calico-cni.tar
+            description: Pull the calico-cni image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/typha:v3.29.0 calico-typha.tar
+            description: Pull the calico-typha image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/csi:v3.29.0 calico-csi.tar
+            description: Pull the calico-csi image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" docker.io/calico/node-driver-registrar:v3.29.0 calico-node-driver-registrar.tar
+            description: Pull the calico-node-driver-registrar image
+          - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" quay.io/tigera/operator:v1.36.0 tigera-operator.tar
+            description: Pull the tigera-operator image
+      onInstall:
+        after:
+          - cmd: |
+              k3d image load calico-apiserver.tar \
+                calico-kube-controllers.tar \
+                calico-node.tar \
+                calico-pod2daemon-flexvol.tar \
+                calico-cni.tar \
+                calico-typha.tar \
+                calico-csi.tar \
+                calico-node-driver-registrar.tar \
+                tigera-operator.tar \
+              -c ${ZARF_VAR_CLUSTER_NAME}
+            description: Load the calico images into the k3d cluster
+          - cmd: rm calico-apiserver.tar calico-kube-controllers.tar calico-node.tar calico-pod2daemon-flexvol.tar calico-cni.tar calico-typha.tar calico-csi.tar calico-node-driver-registrar.tar tigera-operator.tar
+            description: Clean up the calico image tarballs

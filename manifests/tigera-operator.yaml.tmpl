@@ -9,8 +9,8 @@ spec:
     containerIPForwarding: Enabled
     ipPools:
     - name: default-ipv4-ippool
-      blockSize: 26
-      cidr: 10.42.0.0/16
+      blockSize: 25
+      cidr: ###ZARF_VAR_POD_CIDR###
       encapsulation: VXLANCrossSubnet
       natOutgoing: Enabled
       nodeSelector: all()
