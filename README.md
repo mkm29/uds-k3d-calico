@@ -1,22 +1,23 @@
-# UDS K3d Calico Environment
+# UDS k3d Calico Environment
 
 > [!IMPORTANT]
 > This package should only be used for development and testing purposes. It is not intended for production use and all data is overwritten when the package is re-deployed.
 
 This zarf package serves as a universal dev (local & remote) and test environment for testing [UDS Core](https://github.com/defenseunicorns/uds-core), individual UDS Capabilities, and UDS capabilities aggregated via the [UDS CLI](https://github.com/defenseunicorns/uds-cli).
 
-- [UDS K3d Calico Environment](#uds-k3d-calico-environment)
+- [UDS k3d Calico Environment](#uds-k3d-calico-environment)
   - [Overview](#overview)
   - [Prerequisites](#prerequisites)
     - [System Requirements](#system-requirements)
   - [Architecture](#architecture)
-    - [K3d Cluster with Calico](#k3d-cluster-with-calico)
+    - [k3d Cluster with Calico](#k3d-cluster-with-calico)
   - [Configuration](#configuration)
     - [Variables](#variables)
     - [Components](#components)
   - [Build and Deploy](#build-and-deploy)
     - [Deploy](#deploy)
     - [Deploy with Custom Settings](#deploy-with-custom-settings)
+    - [Airgap Deployment](#airgap-deployment)
     - [Calico CNI Configuration](#calico-cni-configuration)
     - [CNI Migration Process](#cni-migration-process)
     - [eBPF Dataplane](#ebpf-dataplane)
@@ -32,7 +33,7 @@ This zarf package serves as a universal dev (local & remote) and test environmen
     - [Calico Issues](#calico-issues)
     - [Network Connectivity](#network-connectivity)
   - [Advanced Configuration](#advanced-configuration)
-    - [Custom K3d Arguments](#custom-k3d-arguments)
+    - [Custom k3d Arguments](#custom-k3d-arguments)
     - [Network Policies](#network-policies)
   - [Additional Documentation](#additional-documentation)
   - [Notes](#notes)
@@ -40,9 +41,9 @@ This zarf package serves as a universal dev (local & remote) and test environmen
 
 ## Overview
 
-The UDS K3d package creates a k3d cluster with the following features:
+The UDS k3d Calico package creates a k3d cluster with the following features:
 
-- **K3d cluster** with configurable nodes (default: 1 server, 2 workers)
+- **k3d cluster** with configurable nodes (default: 1 server, 2 workers)
 - **Calico CNI v1.29.0** with Tigera Operator for advanced networking
 - **eBPF dataplane** support for optimal performance (enabled by default)
 - **VXLAN cross-subnet** encapsulation for pod-to-pod communication
@@ -56,8 +57,8 @@ The UDS K3d package creates a k3d cluster with the following features:
 ## Prerequisites
 
 - [UDS CLI](https://uds.defenseunicorns.com/reference/cli/quickstart-and-usage/#install): version 0.20.0 or later
-- [K3d](https://k3d.io/#installation): version 5.7.1 or later
-- [Docker](https://docs.docker.com/get-docker/) or [Podman](https://podman.io/getting-started/installation) for running K3d
+- [k3d](https://k3d.io/#installation): version 5.7.1 or later
+- [Docker](https://docs.docker.com/get-docker/) or [Podman](https://podman.io/getting-started/installation) for running k3d
 
 ### System Requirements
 
@@ -68,11 +69,11 @@ The UDS K3d package creates a k3d cluster with the following features:
 
 ## Architecture
 
-### K3d Cluster with Calico
+### k3d Cluster with Calico
 
 ```mermaid
 graph TB
-    subgraph "UDS K3d Cluster"
+    subgraph "UDS k3d Calico Cluster"
         subgraph "Control Plane"
             K3S["K3s Server<br/>(uds-calico-server-0)"]
         end
@@ -107,7 +108,7 @@ graph TB
 
 ### Variables
 
-The following variables can be configured when deploying the UDS K3d package:
+The following variables can be configured when deploying the UDS k3d Calico package:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
@@ -115,7 +116,7 @@ The following variables can be configured when deploying the UDS K3d package:
 | `SUBNET_CIDR` | Subnet CIDR for the cluster | `string` | `"10.0.0.0/10"` | no |
 | `POD_CIDR` | Pod CIDR for the cluster | `string` | `"10.42.0.0/16"` | no |
 | `SERVICE_CIDR` | Service CIDR for the cluster | `string` | `"10.96.0.0/16"` | no |
-| `K3D_IMAGE` | K3d image to use | `string` | `"rancher/k3s:v1.32.5-k3s1"` | no |
+| `K3D_IMAGE` | k3d image to use | `string` | `"rancher/k3s:v1.32.5-k3s1"` | no |
 | `K3D_EXTRA_ARGS` | Optionally pass k3d arguments to the default | `string` | `""` | no |
 | `NGINX_EXTRA_PORTS` | Optionally allow more ports through Nginx (combine with K3D_EXTRA_ARGS '-p &lt;port&gt;:&lt;port&gt;@server:*') | `string` | `"[]"` | no |
 | `DOMAIN` | Cluster domain | `string` | `"uds.dev"` | no |
@@ -126,7 +127,7 @@ The following variables can be configured when deploying the UDS K3d package:
 
 ### Components
 
-The following components are available in the UDS K3d package:
+The following components are available in the UDS k3d Calico package:
 
 | Name | Description | Required |
 |------|-------------|:--------:|
@@ -212,7 +213,7 @@ uds run deploy-airgap-package
 
 The airgap flavor includes all required images:
 
-- K3d/K3s base images
+- k3d/K3s base images
 - Calico CNI images (Tigera Operator, Calico components)
 - UDS Dev Stack images (MetalLB, NGINX, MinIO, local-path provisioner)
 
@@ -220,7 +221,7 @@ See [Airgap Documentation](docs/AIRGAP.md) for more details.
 
 ### Calico CNI Configuration
 
-The UDS K3d package configures Calico with:
+The UDS k3d Calico package configures Calico with:
 
 - **IP Pool**: Uses the configured Pod CIDR (default: `10.42.0.0/16`)
 - **Block Size**: `/26` (64 IPs per Node)
@@ -362,7 +363,7 @@ uds zarf package deploy zarf-package-uds-k3d-*.tar.zst \
 
 ## Advanced Configuration
 
-### Custom K3d Arguments
+### Custom k3d Arguments
 
 You can set extra k3d args by setting the deploy-time ZARF_VAR_K3D_EXTRA_ARGS:
 
@@ -405,12 +406,12 @@ spec:
 ## Notes
 
 > [!NOTE]
-> UDS K3d intentionally does not address airgap concerns for K3d or the load balancer logic deployed in this package. This allows running `zarf init` or deploying a Zarf Init Package via a UDS Bundle after the UDS K3d environment is deployed.
+> UDS k3d intentionally does not address airgap concerns for k3d or the load balancer logic deployed in this package. This allows running `zarf init` or deploying a Zarf Init Package via a UDS Bundle after the UDS k3d environment is deployed.
 
 ## Resources
 
 - [UDS Core Documentation](https://github.com/defenseunicorns/uds-core)
 - [Calico Documentation](https://docs.tigera.io/calico/latest/)
 - [Calico eBPF Dataplane](https://docs.tigera.io/calico/latest/operations/ebpf/)
-- [K3d Documentation](https://k3d.io/)
+- [k3d Documentation](https://k3d.io/)
 - [UDS CLI Documentation](https://uds.defenseunicorns.com/)
