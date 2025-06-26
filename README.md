@@ -11,15 +11,20 @@ This zarf package serves as a universal dev (local & remote) and test environmen
     - [System Requirements](#system-requirements)
   - [Architecture](#architecture)
     - [k3d Cluster with Calico](#k3d-cluster-with-calico)
+    - [Calico Component Architecture](#calico-component-architecture)
   - [Configuration](#configuration)
     - [Variables](#variables)
     - [Components](#components)
   - [Build and Deploy](#build-and-deploy)
     - [Deploy](#deploy)
     - [Deploy with Custom Settings](#deploy-with-custom-settings)
+    - [Docker Hub Authentication (Optional)](#docker-hub-authentication-optional)
     - [Airgap Deployment](#airgap-deployment)
+    - [Calico Architecture Overview](#calico-architecture-overview)
+      - [Core Components](#core-components)
+      - [Dataplane Architecture](#dataplane-architecture)
     - [Calico CNI Configuration](#calico-cni-configuration)
-    - [CNI Migration Process](#cni-migration-process)
+    - [CNI Configuration](#cni-configuration)
     - [eBPF Dataplane](#ebpf-dataplane)
     - [DNS Configuration](#dns-configuration)
   - [Cluster Management](#cluster-management)
@@ -48,10 +53,9 @@ The UDS k3d Calico package creates a k3d cluster with the following features:
 - **eBPF dataplane** support for optimal performance (enabled by default)
 - **VXLAN cross-subnet** encapsulation for pod-to-pod communication
 - **Container IP forwarding** enabled for proper pod connectivity
-- **Seamless CNI migration** from Flannel to Calico during deployment
+- **Direct CNI deployment** without Flannel using upstream Calico manifests
 - **Integration with UDS Core** including Istio service mesh support
 - **DNS resolution** for `*.uds.dev` domains via CoreDNS overrides
-- **UDS Dev Stack**: MetalLB, NGINX, MinIO, and local-path-rwx storage
 - **Configurable network CIDRs** for subnet, pod, and service networks
 
 ## Prerequisites
@@ -76,11 +80,36 @@ graph TB
     subgraph "UDS k3d Calico Cluster"
         subgraph "Control Plane"
             K3S["K3s Server<br/>(uds-calico-server-0)"]
+            APISERVER["kube-apiserver"]
+            ETCD["etcd"]
+        end
+
+        subgraph "Worker Nodes"
+            AGENT0["k3d-uds-calico-agent-0"]
+            AGENT1["k3d-uds-calico-agent-1"]
+        end
+
+        subgraph "Calico Components"
+            subgraph "Tigera Operator"
+                TO["Tigera Operator<br/>(tigera-operator namespace)"]
+            end
+
+            subgraph "Calico System"
+                TYPHA["Typha<br/>(Datastore cache)"]
+                CC["calico-controllers<br/>(Policy, IPAM)"]
+                CN0["calico-node<br/>(Felix + BIRD + eBPF)"]
+                CN1["calico-node<br/>(Felix + BIRD + eBPF)"]
+                CN2["calico-node<br/>(Felix + BIRD + eBPF)"]
+            end
+
+            subgraph "Calico API"
+                CAPI["Calico API Server<br/>(calico-apiserver namespace)"]
+            end
         end
 
         subgraph "Networking Stack"
-            CALICO["Calico CNI<br/>(eBPF Dataplane)"]
             COREDNS["CoreDNS<br/>(*.uds.dev resolution)"]
+            FLANNEL["Flannel CNI<br/>(Initial connectivity)"]
             NGINX["NGINX<br/>(Load Balancer)"]
         end
 
@@ -95,13 +124,92 @@ graph TB
         end
     end
 
-    K3S --> CALICO
-    CALICO --> COREDNS
+    K3S --> APISERVER
+    APISERVER --> ETCD
+    TO --> APISERVER
+    TO --> CN0
+    TO --> CN1
+    TO --> CN2
+    TO --> TYPHA
+    TO --> CC
+    TO --> CAPI
+
+    CN0 --> AGENT0
+    CN1 --> AGENT1
+    CN2 --> K3S
+
+    TYPHA --> CC
+    CN0 --> TYPHA
+    CN1 --> TYPHA
+    CN2 --> TYPHA
+
+    FLANNEL --> K3S
+    CN0 --> COREDNS
+    CN1 --> COREDNS
+    CN2 --> COREDNS
     NGINX --> ISTIO
 
-    style CALICO fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style TO fill:#ff6f00,stroke:#e65100,stroke-width:2px,color:#fff
+    style TYPHA fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style CC fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style CN0 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style CN1 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style CN2 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style CAPI fill:#ffa726,stroke:#e65100,stroke-width:2px,color:#fff
     style K3S fill:#326ce5,stroke:#1e88e5,stroke-width:2px,color:#fff
     style ISTIO fill:#466bb0,stroke:#1a237e,stroke-width:2px,color:#fff
+    style FLANNEL fill:#00acc1,stroke:#006064,stroke-width:2px,color:#fff
+```
+
+### Calico Component Architecture
+
+```mermaid
+graph LR
+    subgraph "Each Node"
+        subgraph "calico-node Pod"
+            FELIX["Felix<br/>(Policy Engine)"]
+            BIRD["BIRD<br/>(BGP Daemon)"]
+            CONFD["confd<br/>(Config Manager)"]
+            CNI["Calico CNI Plugin"]
+            IPAM["Calico IPAM"]
+        end
+
+        subgraph "Kernel/eBPF"
+            BPF["eBPF Programs<br/>(Dataplane)"]
+            NETFILTER["Netfilter<br/>(iptables rules)"]
+            ROUTES["Kernel Routes"]
+        end
+
+        subgraph "Container Runtime"
+            CONTAINERD["containerd"]
+            PODS["Pod Network<br/>Namespaces"]
+        end
+    end
+
+    subgraph "Cluster Services"
+        TYPHA2["Typha<br/>(Datastore Proxy)"]
+        ETCD2["etcd<br/>(Kubernetes Datastore)"]
+        APISERVER2["kube-apiserver"]
+    end
+
+    FELIX --> BPF
+    FELIX --> NETFILTER
+    FELIX --> TYPHA2
+    BIRD --> ROUTES
+    BIRD --> FELIX
+    CONFD --> BIRD
+    CONFD --> FELIX
+    CNI --> IPAM
+    CNI --> FELIX
+    CONTAINERD --> CNI
+    PODS --> BPF
+
+    TYPHA2 --> ETCD2
+    TYPHA2 --> APISERVER2
+
+    style FELIX fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style BPF fill:#ff5722,stroke:#bf360c,stroke-width:2px,color:#fff
+    style TYPHA2 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
 ```
 
 ## Configuration
@@ -113,9 +221,9 @@ The following variables can be configured when deploying the UDS k3d Calico pack
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `CLUSTER_NAME` | Name of the cluster | `string` | `"uds-calico"` | no |
-| `SUBNET_CIDR` | Subnet CIDR for the cluster | `string` | `"10.0.0.0/10"` | no |
-| `POD_CIDR` | Pod CIDR for the cluster | `string` | `"10.42.0.0/16"` | no |
-| `SERVICE_CIDR` | Service CIDR for the cluster | `string` | `"10.96.0.0/16"` | no |
+| `SUBNET_CIDR` | Subnet CIDR for the cluster | `string` | `"10.0.0.0/16"` | no |
+| `POD_CIDR` | Pod CIDR for the cluster | `string` | `"10.1.0.0/16"` | no |
+| `SERVICE_CIDR` | Service CIDR for the cluster | `string` | `"10.96.0.0/12"` | no |
 | `K3D_IMAGE` | k3d image to use | `string` | `"rancher/k3s:v1.32.5-k3s1"` | no |
 | `K3D_EXTRA_ARGS` | Optionally pass k3d arguments to the default | `string` | `""` | no |
 | `NGINX_EXTRA_PORTS` | Optionally allow more ports through Nginx (combine with K3D_EXTRA_ARGS '-p &lt;port&gt;:&lt;port&gt;@server:*') | `string` | `"[]"` | no |
@@ -124,6 +232,8 @@ The following variables can be configured when deploying the UDS k3d Calico pack
 | `NUMBER_OF_SERVERS` | Number of server nodes | `string` | `"1"` | no |
 | `NUMBER_OF_AGENTS` | Number of worker nodes | `string` | `"2"` | no |
 | `EXTRA_TLS_SANS` | Additional TLS SANs for the cluster (comma-separated) | `string` | `"127.0.0.1"` | no |
+| `REGISTRY_USERNAME` | Username for Docker Hub registry authentication | `string` | `""` | no |
+| `REGISTRY_PASSWORD` | Password for Docker Hub registry authentication | `string` | `""` | no |
 
 ### Components
 
@@ -135,12 +245,10 @@ The following components are available in the UDS k3d Calico package:
 | `k3d-airgap-images` | Load the airgap images for k3d into Docker | yes¹ |
 | `create-cluster-airgap` | Required component for airgap deployments | yes¹ |
 | `create-cluster` | Create the k3d cluster | yes |
-| `install-calico` | Install Calico CNI v1.29.0 | yes |
-| `enable-ebpf` | Enable eBPF dataplane for Calico | yes |
+| `install-calico` | Install Calico CNI v3.30.2 using Helm | yes |
+| `verify-calico-connectivity` | Verify Calico BPF configuration and connectivity | yes |
 | `connectivity-test` | Test pod-to-pod connectivity across nodes | no |
 | `calico-airgap-images` | Load the airgap images for Calico into Docker | yes¹ |
-| `uds-dev-stack-airgap-images` | Load the airgap images for uds-dev-stack into Docker | yes¹ |
-| `uds-dev-stack` | Install MetalLB, NGINX, MinIO, local-path-rwx and Ensure MachineID | yes |
 
 ¹ Only required when using the `airgap` flavor
 
@@ -190,14 +298,35 @@ uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
 
 # Deploy with custom network CIDRs
 uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
-  --set SUBNET_CIDR="10.10.0.0/12" \
+  --set SUBNET_CIDR="10.10.0.0/16" \
   --set POD_CIDR="10.44.0.0/16" \
   --set SERVICE_CIDR="10.97.0.0/16"
 
 # Deploy with additional TLS SANs for external access
 uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
   --set EXTRA_TLS_SANS="192.168.1.100,my-k3s.example.com"
+
+# Deploy with Docker Hub authentication (optional)
+uds zarf package deploy oci://defenseunicorns/uds-k3d:0.14.2 \
+  --set DOCKER_HUB_USERNAME="myusername" \
+  --set DOCKER_HUB_PASSWORD="mypassword"
 ```
+
+### Docker Hub Authentication (Optional)
+
+If you're experiencing Docker Hub rate limits, you can optionally provide authentication credentials:
+
+1. **Interactive prompt**: The package will prompt for credentials during deployment
+2. **Command line**: Pass credentials as shown above
+3. **Environment variables**: Set `ZARF_VAR_DOCKER_HUB_USERNAME` and `ZARF_VAR_DOCKER_HUB_PASSWORD`
+
+**Note**: Docker Hub authentication is completely optional. If no credentials are provided:
+
+- The `registries.yaml` file will not be created
+- The `--registry-config` flag will not be passed to k3d
+- The cluster will work normally but may be subject to Docker Hub's anonymous rate limits
+
+When credentials are provided, they configure k3d's registry authentication, allowing all nodes in the cluster to pull images from Docker Hub with your account's rate limits.
 
 ### Airgap Deployment
 
@@ -215,32 +344,80 @@ The airgap flavor includes all required images:
 
 - k3d/K3s base images
 - Calico CNI images (Tigera Operator, Calico components)
-- UDS Dev Stack images (MetalLB, NGINX, MinIO, local-path provisioner)
 
 See [Airgap Documentation](docs/AIRGAP.md) for more details.
+
+### Calico Architecture Overview
+
+Calico consists of several key components that work together to provide networking and security:
+
+#### Core Components
+
+1. **Tigera Operator**: Manages the lifecycle of all Calico components
+   - Deploys and configures Calico based on the Installation CR
+   - Monitors component health via TigeraStatus CRs
+   - Handles upgrades and configuration changes
+
+2. **Felix** (calico-node): The policy engine on each node
+   - Programs eBPF maps or iptables rules
+   - Handles network policy enforcement
+   - Manages pod connectivity and load balancing
+
+3. **BIRD** (calico-node): BGP daemon for route distribution
+   - Distributes pod routes between nodes
+   - Enables pod-to-pod communication across nodes
+   - Not used in VXLAN mode but included for compatibility
+
+4. **Typha**: Datastore cache and fan-out service
+   - Reduces load on Kubernetes API server
+   - Caches Calico resources for calico-node instances
+   - Essential for clusters with many nodes
+
+5. **calico-kube-controllers**: Cluster-wide controllers
+   - Manages IP address allocation (IPAM)
+   - Handles node lifecycle events
+   - Synchronizes Kubernetes and Calico resources
+
+6. **Calico API Server**: Extended Kubernetes API
+   - Provides Calico-specific API resources
+   - Enables kubectl access to Calico resources
+   - Integrates with Kubernetes RBAC
+
+#### Dataplane Architecture
+
+In this deployment, Calico uses the **eBPF dataplane** with the following configuration:
+
+- **BPF Programs**: Replace iptables for packet processing
+- **Tunnel Mode**: Used for service traffic (compatible with kube-proxy)
+- **VXLAN Encapsulation**: For pod-to-pod traffic across subnets
+- **Flannel Coexistence**: Maintains Zarf deployment requirements
 
 ### Calico CNI Configuration
 
 The UDS k3d Calico package configures Calico with:
 
-- **IP Pool**: Uses the configured Pod CIDR (default: `10.42.0.0/16`)
+- **IP Pool**: Uses the configured Pod CIDR (default: `10.1.0.0/16`)
 - **Block Size**: `/26` (64 IPs per Node)
 - **Encapsulation**: `VXLANCrossSubnet`
 - **NAT Outgoing**: Enabled
 - **Container IP Forwarding**: Enabled
 - **Dataplane**: eBPF with DSR mode and `bpfConnectTimeLoadBalancing` disabled for Istio Ambient compatibility
 
-### CNI Migration Process
+### CNI Configuration
 
-The package implements a seamless CNI migration strategy:
+The package deploys Calico CNI using the following approach:
 
-1. K3s cluster starts with Flannel CNI (default)
-2. CoreDNS becomes available with basic networking
-3. Calico CNI is installed via Tigera Operator
-4. Flannel is removed after Calico is ready
-5. eBPF dataplane is enabled for optimal performance
+1. K3s cluster starts with Flannel CNI (default K3s behavior)
+2. CoreDNS becomes available with basic networking via Flannel
+3. Calico is installed using the official Helm chart (v3.30.2)
+4. Flannel continues to run alongside Calico (required for Zarf connectivity)
+5. Calico BPF dataplane is configured to work with K3s embedded kube-proxy
 
-This approach ensures continuous cluster connectivity throughout the deployment.
+**Important Notes**:
+
+- The package uses Calico in BPF "Tunnel" mode to ensure compatibility with K3s's embedded kube-proxy
+- Flannel remains active to maintain Zarf's cluster connectivity requirements
+- Service traffic is handled by kube-proxy while pod-to-pod traffic uses Calico BPF
 
 ### eBPF Dataplane
 
@@ -248,11 +425,18 @@ The eBPF dataplane is enabled by default with:
 
 ```yaml
 bpfEnabled: true
-bpfExternalServiceMode: DSR
+bpfExternalServiceMode: Tunnel
 bpfConnectTimeLoadBalancing: Disabled
+bpfKubeProxyIptablesCleanupEnabled: false
 ```
 
-This provides high-performance packet processing and better compatibility with Istio Ambient mesh.
+Key configuration choices:
+
+- **Tunnel mode**: Used instead of DSR to ensure compatibility with K3s embedded kube-proxy
+- **No iptables cleanup**: Preserves kube-proxy rules for service handling
+- **BPF for pod traffic**: Provides high-performance pod-to-pod networking
+
+This configuration allows Calico BPF and kube-proxy to coexist, with each handling their respective traffic types.
 
 ### DNS Configuration
 

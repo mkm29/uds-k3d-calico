@@ -9,3 +9,4 @@ zarf-config.yaml
 *.tar
 .vscode
 CLAUDE.md
+registries.yaml

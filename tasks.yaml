@@ -117,9 +117,10 @@ tasks:
     actions:
       - description: Remove airgap images
         cmd: |
-          rm airgap/uds-dev-stack/*.tar
           rm airgap/k3d/*.tar
           rm airgap/k3d/*.tar.zst
+          rm airgap/calico/*.tar
+          rm airgap/calico/*.tar.zst
 
   # - name: build-image
   #   actions:

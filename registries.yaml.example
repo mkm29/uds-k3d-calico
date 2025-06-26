@@ -1,0 +1,25 @@
+# Example registry configuration file for k3d
+# Copy this file to registries.yaml and update with your credentials
+# Or use Zarf variables REGISTRY_USERNAME and REGISTRY_PASSWORD
+
+configs:
+  # Docker Hub configuration
+  registry-1.docker.io:
+    auth:
+      username: "your-docker-hub-username"
+      password: "your-docker-hub-password"
+  
+  # Additional registries can be configured here
+  # ghcr.io:
+  #   auth:
+  #     username: "your-github-username"
+  #     password: "your-github-pat"
+  
+  # Private registry example
+  # my-registry.example.com:
+  #   auth:
+  #     username: "username"
+  #     password: "password"
+  #   tls:
+  #     # Skip TLS verification (not recommended for production)
+  #     insecure_skip_verify: true

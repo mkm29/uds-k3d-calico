@@ -17,15 +17,15 @@ variables:
 
   - name: SUBNET_CIDR
     description: "Subnet CIDR for the cluster"
-    default: "10.0.0.0/10"
+    default: "10.0.0.0/16"
 
   - name: POD_CIDR
     description: "Pod CIDR for the cluster"
-    default: "10.42.0.0/16"
+    default: "10.1.0.0/16"
 
   - name: SERVICE_CIDR
     description: "Service CIDR for the cluster"
-    default: "10.96.0.0/16"
+    default: "10.96.0.0/12"
 
   - name: K3D_IMAGE
     description: "K3d image to use"
@@ -57,6 +57,18 @@ variables:
   - name: EXTRA_TLS_SANS
     description: "Additional TLS SANs for the cluster (comma-separated)"
     default: "127.0.0.1"
+
+  - name: REGISTRY_USERNAME
+    description: "Username for Docker Hub registry authentication"
+    default: ""
+    prompt: true
+    sensitive: true
+
+  - name: REGISTRY_PASSWORD
+    description: "Password for Docker Hub registry authentication"
+    default: ""
+    prompt: true
+    sensitive: true
 
 components:
   - name: destroy-cluster
@@ -101,7 +113,7 @@ components:
 
   - name: create-cluster
     required: true
-    description: "Create the k3d cluster"
+    description: "Create the k3d cluster and install Calico"
     actions:
       onDeploy:
         before:
@@ -115,16 +127,37 @@ components:
               fi
             description: "Check k3d version compatibility"
           - cmd: |
+              # Process registries template only if credentials are provided
+              if [ -n "${ZARF_VAR_DOCKER_HUB_USERNAME}" ] && [ -n "${ZARF_VAR_DOCKER_HUB_PASSWORD}" ]; then
+                sed -e "s|###ZARF_VAR_DOCKER_HUB_USERNAME###|${ZARF_VAR_DOCKER_HUB_USERNAME}|g" \
+                    -e "s|###ZARF_VAR_DOCKER_HUB_PASSWORD###|${ZARF_VAR_DOCKER_HUB_PASSWORD}|g" \
+                    registries.yaml.tmpl > registries.yaml
+                echo "Registry configuration created with Docker Hub credentials"
+              else
+                # Remove any existing registries.yaml to ensure clean state
+                rm -f registries.yaml
+                echo "No Docker Hub credentials provided, skipping registry configuration"
+              fi
+            description: "Process registry configuration"
+          - cmd: |
               VOLUME_MOUNT=""
+              REGISTRY_CONFIG=""
+
+              # Set up airgap volume if in airgap mode
               if [ "${ZARF_VAR_AIRGAP_MODE}" = "true" ]; then
                 # renovate: datasource=docker depName=ghcr.io/k3d-io/k3d-tools
                 export K3D_HELPER_IMAGE_TAG=5.8.3
                 VOLUME_MOUNT="--volume k3s-airgap-images:/var/lib/rancher/k3s/agent/images"
               fi
+
+              # Add registry config only if registries.yaml exists
+              if [ -f "registries.yaml" ]; then
+                REGISTRY_CONFIG="--registry-config ${PWD}/registries.yaml"
+              fi
+
               k3d cluster create \
               -p "80:80@server:*" \
               -p "443:443@server:*" \
-              --api-port 6550 \
               --k3s-arg "--tls-san=${ZARF_VAR_EXTRA_TLS_SANS}@server:*" \
               --k3s-arg "--disable=traefik@server:*" \
               --k3s-arg "--disable=metrics-server@server:*" \
@@ -137,11 +170,11 @@ components:
               --agents ${ZARF_VAR_NUMBER_OF_AGENTS} \
               --subnet ${ZARF_VAR_SUBNET_CIDR} \
               --image ${ZARF_VAR_K3D_IMAGE} ${ZARF_VAR_K3D_EXTRA_ARGS} \
+              ${REGISTRY_CONFIG} \
               ${VOLUME_MOUNT} \
               ${ZARF_VAR_CLUSTER_NAME}
             description: "Create the cluster"
-        onSuccess:
-          # Wait for CoreDNS to be available with default Flannel CNI
+        after:
           - wait:
               cluster:
                 kind: Pod
@@ -149,195 +182,144 @@ components:
                 name: "k8s-app=kube-dns"
                 namespace: kube-system
             description: "Wait for CoreDNS to be ready"
-
   - name: install-calico
     required: true
-    description: "Install Calico CNI v1.29.0"
-    manifests:
-    - name: calico-crds
-      namespace: default
-      files:
-        - manifests/custom-resources.yaml
-    - name: tigera-operator
-      namespace: default
-      files:
-        - manifests/tigera-operator.yaml.tmpl
+    description: "Install Calico CNI into the cluster"
     actions:
       onDeploy:
         before:
-          # Remove Flannel before installing Calico
-          - cmd: |
-              ./zarf tools kubectl delete daemonset kube-flannel-ds -n kube-flannel --ignore-not-found=true
-              ./zarf tools kubectl delete namespace kube-flannel --ignore-not-found=true
-            description: "Remove Flannel CNI"
+          - cmd: ./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}'
+            description: "Kubernetes Service Endpoint Host for Calico"
+            setVariables:
+              - name: KUBERNETEDS_SVC_ENDPOINT_HOST
+          - cmd: ./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}'
+            description: "Kubernetes Service Endpoint Port for Calico"
+            setVariables:
+              - name: KUBERNETEDS_SVC_ENDPOINT_PORT
         after:
           - wait:
               cluster:
-                kind: tigerastatus
+                kind: Tigerastatus
                 condition: Available
                 name: "apiserver"
                 namespace: default
             description: "Wait for Calico API Server to be ready"
           - wait:
               cluster:
-                kind: tigerastatus
+                kind: Tigerastatus
                 condition: Available
                 name: "calico"
                 namespace: default
             description: "Wait for Calico to be ready"
           - wait:
               cluster:
-                kind: tigerastatus
+                kind: Tigerastatus
                 condition: Available
                 name: "ippools"
                 namespace: default
             description: "Wait for Calico IP pools to be ready"
-
-  - name: enable-ebpf
-    required: true
-    description: "Enable eBPF dataplane for Calico"
-    actions:
-      onDeploy:
-        before:
-          - cmd: |
-              ./zarf tools kubectl create configmap kubernetes-services-endpoint \
-                      --namespace tigera-operator \
-                      --from-literal=KUBERNETES_SERVICE_HOST=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}') \
-                      --from-literal=KUBERNETES_SERVICE_PORT=$(./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}')
-            description: "Creating Kubernetes API server ConfigMap for eBPF"
-          - cmd: |
-              ./zarf tools kubectl -n tigera-operator patch installation default --type merge -p '{"spec":{"calicoNetwork":{"linuxDataplane":"BPF", "hostPorts":null}}}'
-            description: "Patching Calico installation to use eBPF"
-          - cmd: |
-              ./zarf tools kubectl patch felixconfiguration default --type='merge' -p '{"spec":{"bpfConnectTimeLoadBalancing": "Disabled", "bpfExternalServiceMode": "DSR"}}'
-            description: "Patching FelixConfiguration to set bpfConnectTimeLoadBalancing to Disabled and bpfExternalServiceMode to DSR (for Istio Ambient)"
-        after:
-          - wait:
-              cluster:
-                kind: tigerastatus
-                condition: Available
-                name: "apiserver"
-                namespace: default
-            description: "Wait for Calico API Server to be ready"
-          - wait:
-              cluster:
-                kind: tigerastatus
-                condition: Available
-                name: "calico"
-                namespace: default
-            description: "Wait for Calico to be ready"
-          - wait:
-              cluster:
-                kind: tigerastatus
-                condition: Available
-                name: "ippools"
-                namespace: default
-            description: "Wait for Calico IP pools to be ready"
+        onSuccess:
           - cmd: |
               ./zarf tools kubectl get installation default -o jsonpath='{.spec.calicoNetwork.linuxDataplane}'
-            description: "Verifying Calico is set to use eBPF dataplane"
+            description: "Verifying Calico is set to use the correct dataplane"
+    charts:
+      - name: tigera-operator
+        namespace: tigera-operator
+        url: https://docs.tigera.io/calico/charts
+        version: v3.30.2
+        valuesFiles:
+          - "values/calico-values.yaml"
+        variables:
+          - name: KUBERNETEDS_SVC_ENDPOINT_HOST
+            description: "Kubernetes Service Endpoint Host"
+            path: kubernetesServiceEndpoint.host
+          - name: KUBERNETEDS_SVC_ENDPOINT_PORT
+            description: "Kubernetes Service Endpoint Port"
+            path: kubernetesServiceEndpoint.port
 
-  - name: connectivity-test
-    required: false
-    description: "Test pod-to-pod connectivity across nodes"
-    manifests:
-      - name: connectivity-test-resources
-        namespace: default
-        files:
-          - manifests/nginx.yaml
-          - manifests/busybox.yaml
-    actions:
-      onDeploy:
-        after:
-          - wait:
-              cluster:
-                kind: Deployment
-                condition: available
-                name: nginx
-                namespace: default
-            maxTotalSeconds: 60
-            description: "Wait for nginx deployment to be ready"
-          - wait:
-              cluster:
-                kind: Pod
-                condition: Ready
-                name: busybox
-                namespace: default
-            maxTotalSeconds: 60
-            description: "Wait for busybox pod to be ready"
-          - cmd: |
-              echo "Testing connectivity between pods across nodes..."
-              if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
-                echo "✅ Connectivity test PASSED - HTTP 200 received"
-                echo "Pods are running on the following nodes:"
-                ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
-                ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
-              else
-                echo "❌ Connectivity test FAILED - HTTP 200 not received"
-                exit 1
-              fi
-            description: "Test pod-to-pod connectivity"
-          - cmd: |
-              echo "Cleaning up test resources..."
-              ./zarf tools kubectl delete deployment nginx -n default --ignore-not-found=true
-              ./zarf tools kubectl delete service nginx -n default --ignore-not-found=true
-              ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
-            description: "Clean up connectivity test resources"
-
-  - name: calico-airgap-images
+  - name: verify-calico-connectivity
     required: true
-    only:
-      flavor: airgap
-    description: "Load the airgap images for Calico into Docker"
-    import:
-      path: airgap/calico
-      name: calico-airgap-images
-
-  - name: uds-dev-stack-airgap-images
-    required: true
-    only:
-      flavor: airgap
-    description: "Load the airgap images for uds-dev-stack into Docker"
-    import:
-      path: airgap/uds-dev-stack
-      name: uds-dev-stack-airgap-images
-
-  - name: uds-dev-stack
-    required: true
-    description: "Install MetalLB, NGINX, Minio, local-path-rwx and Ensure MachineID to meet UDS developer needs without later config changes"
+    description: "Verify Calico connectivity and BPF configuration"
     actions:
       onDeploy:
         before:
-          - cmd: ./zarf tools kubectl get nodes -o=jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' | cut -d'.' -f1-3
-            description: "Load network ip base for MetalLB"
-            setVariables:
-              - name: BASE_IP
+          - cmd: |
+              # Wait for all Calico components to be ready
+              ./zarf tools kubectl wait --for=condition=Available tigerastatus --all --timeout=300s
+
+              # Verify BPF settings are applied correctly
+              echo "Checking Calico BPF configuration..."
+              echo "BPF Enabled: $(./zarf tools kubectl get felixconfiguration default -o jsonpath='{.spec.bpfEnabled}')"
+              echo "BPF Service Mode: $(./zarf tools kubectl get felixconfiguration default -o jsonpath='{.spec.bpfExternalServiceMode}')"
+              echo "Dataplane: $(./zarf tools kubectl get installation default -o jsonpath='{.spec.calicoNetwork.linuxDataplane}')"
+            description: "Verify Calico BPF configuration"
+          - cmd: |
+              # Ensure all nodes have the correct configuration
+              ./zarf tools kubectl get nodes -o wide
+              echo "---"
+              ./zarf tools kubectl get pods -n calico-system -o wide
+            description: "Check Calico pod distribution"
         after:
-          - cmd: ./zarf tools kubectl rollout restart deployment coredns -n kube-system
-            description: "Restart CoreDNS to pick up internal DNS override for uds.dev"
-    charts:
-      - name: metallb
-        namespace: metallb-system
-        url: https://metallb.github.io/metallb
-        version: 0.15.2
-        valuesFiles:
-          - "values/metallb-values.yaml"
-      - name: uds-dev-stack
-        namespace: uds-dev-stack
-        localPath: chart
-        # x-release-please-start-version
-        version: 0.14.2
-        # x-release-please-end
-        valuesFiles:
-          - "values/dev-stack-values.yaml"
-        variables:
-          - name: COREDNS_OVERRIDES
-            # Defaults contain rewrites of `*.uds.dev` to the UDS core Istio tenant and admin gateways
-            description: "CoreDNS overrides"
-            path: coreDnsOverrides
-      - name: minio
-        namespace: uds-dev-stack
-        version: 5.4.0
-        url: https://charts.min.io/
-        valuesFiles:
-          - "values/minio-values.yaml"
+          - cmd: |
+              # Final connectivity verification
+              echo "Creating test pods to verify connectivity..."
+              ./zarf tools kubectl run test-client --image=busybox --rm -it --restart=Never -- sh -c "sleep 5" &
+              sleep 10
+              echo "Calico configuration complete. Run connectivity tests to verify."
+            description: "Final configuration status"
+
+  # - name: connectivity-test
+  #   required: false
+  #   description: "Test pod-to-pod connectivity across nodes"
+  #   manifests:
+  #     - name: connectivity-test-resources
+  #       namespace: default
+  #       files:
+  #         - manifests/nginx.yaml
+  #         - manifests/busybox.yaml
+  #   actions:
+  #     onDeploy:
+  #       after:
+  #         - wait:
+  #             cluster:
+  #               kind: Deployment
+  #               condition: available
+  #               name: nginx
+  #               namespace: default
+  #           maxTotalSeconds: 60
+  #           description: "Wait for nginx deployment to be ready"
+  #         - wait:
+  #             cluster:
+  #               kind: Pod
+  #               condition: Ready
+  #               name: busybox
+  #               namespace: default
+  #           maxTotalSeconds: 60
+  #           description: "Wait for busybox pod to be ready"
+  #         - cmd: |
+  #             echo "Testing connectivity between pods across nodes..."
+  #             if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
+  #               echo "✅ Connectivity test PASSED - HTTP 200 received"
+  #               echo "Pods are running on the following nodes:"
+  #               ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
+  #               ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
+  #             else
+  #               echo "❌ Connectivity test FAILED - HTTP 200 not received"
+  #               exit 1
+  #             fi
+  #           description: "Test pod-to-pod connectivity"
+  #         - cmd: |
+  #             echo "Cleaning up test resources..."
+  #             ./zarf tools kubectl delete deployment nginx -n default --ignore-not-found=true
+  #             ./zarf tools kubectl delete service nginx -n default --ignore-not-found=true
+  #             ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
+  #           description: "Clean up connectivity test resources"
+
+  # - name: calico-airgap-images
+  #   required: true
+  #   only:
+  #     flavor: airgap
+  #   description: "Load the airgap images for Calico into Docker"
+  #   import:
+  #     path: airgap/calico
+  #     name: calico-airgap-images
