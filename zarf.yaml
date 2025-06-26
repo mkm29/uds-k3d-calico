@@ -162,9 +162,7 @@ components:
               -p "443:443@server:*" \
               --k3s-arg "--tls-san=${ZARF_VAR_EXTRA_TLS_SANS}@server:*" \
               --k3s-arg "--disable=traefik@server:*" \
-              --k3s-arg "--disable=metrics-server@server:*" \
               --k3s-arg "--disable=servicelb@server:*" \
-              --k3s-arg "--disable=local-storage@server:*" \
               --k3s-arg "--disable-network-policy@server:*" \
               --k3s-arg "--cluster-cidr=${ZARF_VAR_POD_CIDR}@server:*" \
               --k3s-arg "--service-cidr=${ZARF_VAR_SERVICE_CIDR}@server:*" \
@@ -262,14 +260,6 @@ components:
               echo "---"
               ./zarf tools kubectl get pods -n calico-system -o wide
             description: "Check Calico pod distribution"
-        after:
-          - cmd: |
-              # Final connectivity verification
-              echo "Creating test pods to verify connectivity..."
-              ./zarf tools kubectl run test-client --image=busybox --rm -it --restart=Never -- sh -c "sleep 5" &
-              sleep 10
-              echo "Calico configuration complete. Run connectivity tests to verify."
-            description: "Final configuration status"
 
   - name: calico-airgap-images
     required: true
