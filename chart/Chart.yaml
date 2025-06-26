@@ -1,5 +1,0 @@
-apiVersion: v2
-name: uds-dev-stack
-description: UDS dev stack chart
-type: application
-version: 0.14.2

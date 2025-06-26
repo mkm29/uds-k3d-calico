@@ -1,0 +1,34 @@
+installation:
+  cni:
+    type: Calico
+  calicoNetwork:
+    # bgp: Disabled
+    linuxDataplane: "BPF"
+    hostPorts: null
+    containerIPForwarding: Enabled
+    ipPools:
+    - cidr: "###ZARF_VAR_POD_CIDR###"
+      encapsulation: VXLANCrossSubnet
+      natOutgoing: Enabled
+      nodeSelector: all()
+
+defaultFelixConfiguration:
+  enabled: true
+  bpfConnectTimeLoadBalancing: "Disabled"
+  bpfExternalServiceMode: "Tunnel"  # Use Tunnel mode instead of DSR when kube-proxy is present
+  bpfKubeProxyIptablesCleanupEnabled: false  # Don't clean up kube-proxy rules
+
+certs:
+  node:
+    key: null
+    cert: null
+    commonName: null
+  typha:
+    key: null
+    cert: null
+    commonName: null
+    caBundle: null
+
+kubernetesServiceEndpoint:
+  host: "###ZARF_VAR_KUBERNETEDS_SVC_ENDPOINT_HOST###"
+  port: "###ZARF_VAR_KUBERNETEDS_SVC_ENDPOINT_PORT###"

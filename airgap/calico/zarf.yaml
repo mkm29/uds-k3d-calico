@@ -49,7 +49,7 @@ components:
             description: Pull the calico-node-driver-registrar image
           - cmd: ./zarf tools registry pull --platform linux/"###ZARF_PKG_ARCH###" quay.io/tigera/operator:v1.36.0 tigera-operator.tar
             description: Pull the tigera-operator image
-      onInstall:
+      onDeploy:
         after:
           - cmd: |
               k3d image load calico-apiserver.tar \
