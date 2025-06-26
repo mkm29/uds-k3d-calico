@@ -70,52 +70,67 @@ graph TB
         UDS[UDS CLI]
         
         subgraph k3d_cluster[k3d Cluster - uds-calico]
-            subgraph control_plane[Control Plane]
-                SERVER[k3d-uds-calico-server-0<br/>K3s API Server<br/>etcd]
+            subgraph control_plane[Control Plane Node]
+                SERVER[k3d-uds-calico-server-0<br/>K3s API Server<br/>Controller Manager<br/>Scheduler<br/>etcd]
             end
             
-            subgraph workers[Worker Nodes]
-                AGENT0[k3d-uds-calico-agent-0]
-                AGENT1[k3d-uds-calico-agent-1]
+            subgraph worker1[Worker Node 1]
+                AGENT0[k3d-uds-calico-agent-0<br/>kubelet<br/>kube-proxy]
+                CALICO_NODE0[calico-node<br/>Felix + eBPF]
             end
             
-            subgraph networking[Network Stack]
-                FLANNEL[Flannel CNI<br/>Cluster Connectivity]
-                CALICO[Calico CNI v3.30.2<br/>Pod Networking]
-                EBPF[eBPF Dataplane<br/>High Performance]
+            subgraph worker2[Worker Node 2]
+                AGENT1[k3d-uds-calico-agent-1<br/>kubelet<br/>kube-proxy]
+                CALICO_NODE1[calico-node<br/>Felix + eBPF]
+            end
+            
+            subgraph networking[Cluster Networking]
+                FLANNEL[Flannel CNI<br/>Base Connectivity]
+                CALICO[Calico CNI v3.30.2<br/>Pod Networking & Policies]
                 REGISTRY[k3d Registry<br/>:5000]
             end
             
             subgraph services[Core Services]
-                COREDNS[CoreDNS<br/>*.uds.dev]
-                TRAEFIK[Traefik<br/>Ingress]
+                COREDNS[CoreDNS<br/>DNS for *.uds.dev]
+                TRAEFIK[Traefik<br/>Ingress Controller]
                 METRICS[Metrics Server]
             end
-        end
-        
-        subgraph calico_stack[Calico Components]
-            OPERATOR[Tigera Operator<br/>Lifecycle Management]
-            APISERVER[Calico API Server]
-            CONTROLLERS[Calico Controllers<br/>IPAM & Policy]
-            NODE_AGENTS[Calico Node Agents<br/>Felix, BIRD, CNI]
+            
+            subgraph calico_mgmt[Calico Management]
+                OPERATOR[Tigera Operator]
+                APISERVER[Calico API Server]
+                CONTROLLERS[Calico Controllers]
+            end
         end
     end
     
-    UDS -->|Deploy Package| DOCKER
-    DOCKER -->|Create Cluster| k3d_cluster
-    OPERATOR -->|Manages| calico_stack
+    UDS -->|Deploy| DOCKER
+    DOCKER -->|Create| control_plane
+    DOCKER -->|Create| worker1
+    DOCKER -->|Create| worker2
     
-    FLANNEL -->|Base Connectivity| workers
-    CALICO -->|Pod Network| EBPF
-    EBPF -->|Process Packets| workers
+    control_plane -->|Manages| worker1
+    control_plane -->|Manages| worker2
     
-    NODE_AGENTS -->|Run on| AGENT0
-    NODE_AGENTS -->|Run on| AGENT1
+    OPERATOR -->|Deploys| CALICO_NODE0
+    OPERATOR -->|Deploys| CALICO_NODE1
+    OPERATOR -->|Manages| APISERVER
+    OPERATOR -->|Manages| CONTROLLERS
     
+    FLANNEL -.->|Initial Setup| control_plane
+    FLANNEL -.->|Initial Setup| worker1
+    FLANNEL -.->|Initial Setup| worker2
+    
+    CALICO -->|Pod Traffic| CALICO_NODE0
+    CALICO -->|Pod Traffic| CALICO_NODE1
+    
+    style SERVER fill:#2196f3
+    style AGENT0 fill:#90caf9
+    style AGENT1 fill:#90caf9
     style CALICO fill:#ff9800
-    style EBPF fill:#ff5722
+    style CALICO_NODE0 fill:#ffb74d
+    style CALICO_NODE1 fill:#ffb74d
     style OPERATOR fill:#4caf50
-    style UDS fill:#2196f3
 ```
 
 For detailed architecture diagrams and component descriptions, see:
