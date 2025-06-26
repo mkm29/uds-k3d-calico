@@ -8,5 +8,6 @@ tmp/
 zarf-config.yaml
 *.tar
 .vscode
+.claude/
 CLAUDE.md
 registries.yaml
