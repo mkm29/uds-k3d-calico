@@ -30,5 +30,5 @@ certs:
     caBundle: null
 
 kubernetesServiceEndpoint:
-  host: "###ZARF_VAR_KUBERNETEDS_SVC_ENDPOINT_HOST###"
-  port: "###ZARF_VAR_KUBERNETEDS_SVC_ENDPOINT_PORT###"
+  host: "###ZARF_VAR_KUBERNETES_SVC_ENDPOINT_HOST###"
+  port: "###ZARF_VAR_KUBERNETES_SVC_ENDPOINT_PORT###"

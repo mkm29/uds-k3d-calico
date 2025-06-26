@@ -271,53 +271,6 @@ components:
               echo "Calico configuration complete. Run connectivity tests to verify."
             description: "Final configuration status"
 
-  - name: connectivity-test
-    required: false
-    description: "Test pod-to-pod connectivity across nodes"
-    manifests:
-      - name: connectivity-test-resources
-        namespace: default
-        files:
-          - manifests/nginx.yaml
-          - manifests/busybox.yaml
-    actions:
-      onDeploy:
-        after:
-          - wait:
-              cluster:
-                kind: Deployment
-                condition: available
-                name: nginx
-                namespace: default
-            maxTotalSeconds: 60
-            description: "Wait for nginx deployment to be ready"
-          - wait:
-              cluster:
-                kind: Pod
-                condition: Ready
-                name: busybox
-                namespace: default
-            maxTotalSeconds: 60
-            description: "Wait for busybox pod to be ready"
-          - cmd: |
-              echo "Testing connectivity between pods across nodes..."
-              if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
-                echo "✅ Connectivity test PASSED - HTTP 200 received"
-                echo "Pods are running on the following nodes:"
-                ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
-                ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
-              else
-                echo "❌ Connectivity test FAILED - HTTP 200 not received"
-                exit 1
-              fi
-            description: "Test pod-to-pod connectivity"
-          - cmd: |
-              echo "Cleaning up test resources..."
-              ./zarf tools kubectl delete deployment nginx -n default --ignore-not-found=true
-              ./zarf tools kubectl delete service nginx -n default --ignore-not-found=true
-              ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
-            description: "Clean up connectivity test resources"
-
   - name: calico-airgap-images
     required: true
     only:

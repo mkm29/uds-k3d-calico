@@ -153,5 +153,5 @@ tasks:
       - description: "Clean up connectivity test resources"
         cmd: |
           echo "Cleaning up test resources..."
-          ./zarf tools kubectl delete -f manifests/nginx.yaml --ignore-not-found=true
-          ./zarf tools kubectl delete -f manifests/busybox.yaml default --ignore-not-found=true
+          ./zarf tools kubectl delete -f manifests/nginx.yaml
+          ./zarf tools kubectl delete -f manifests/busybox.yaml
