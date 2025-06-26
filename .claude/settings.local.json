@@ -27,7 +27,8 @@
       "Bash(k3d kubeconfig:*)",
       "Bash(docker network:*)",
       "Bash(true)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

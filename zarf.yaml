@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/mkm29/uds-k3d-calico.git
   yolo: true
   # x-release-please-start-version
-  version: "0.14.2-calico"
+  version: "0.14.3-calico"
   # x-release-please-end
 
 variables:
@@ -58,17 +58,19 @@ variables:
     description: "Additional TLS SANs for the cluster (comma-separated)"
     default: "127.0.0.1"
 
-  - name: REGISTRY_USERNAME
+  - name: DOCKER_HUB_USERNAME
     description: "Username for Docker Hub registry authentication"
-    default: ""
     prompt: true
     sensitive: true
 
-  - name: REGISTRY_PASSWORD
+  - name: DOCKER_HUB_PASSWORD
     description: "Password for Docker Hub registry authentication"
-    default: ""
     prompt: true
     sensitive: true
+
+  - name: TIGERA_OPERATOR_VERSION
+    description: "Version of the Tigera Operator to use"
+    default: "v3.30.2"
 
 components:
   - name: destroy-cluster
@@ -182,6 +184,7 @@ components:
                 name: "k8s-app=kube-dns"
                 namespace: kube-system
             description: "Wait for CoreDNS to be ready"
+
   - name: install-calico
     required: true
     description: "Install Calico CNI into the cluster"
@@ -191,11 +194,11 @@ components:
           - cmd: ./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}'
             description: "Kubernetes Service Endpoint Host for Calico"
             setVariables:
-              - name: KUBERNETEDS_SVC_ENDPOINT_HOST
+              - name: KUBERNETES_SVC_ENDPOINT_HOST
           - cmd: ./zarf tools kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}'
             description: "Kubernetes Service Endpoint Port for Calico"
             setVariables:
-              - name: KUBERNETEDS_SVC_ENDPOINT_PORT
+              - name: KUBERNETES_SVC_ENDPOINT_PORT
         after:
           - wait:
               cluster:
@@ -226,7 +229,7 @@ components:
       - name: tigera-operator
         namespace: tigera-operator
         url: https://docs.tigera.io/calico/charts
-        version: v3.30.2
+        version: ${ZARF_VAR_TIGERA_OPERATOR_VERSION}
         valuesFiles:
           - "values/calico-values.yaml"
         variables:
@@ -268,58 +271,58 @@ components:
               echo "Calico configuration complete. Run connectivity tests to verify."
             description: "Final configuration status"
 
-  # - name: connectivity-test
-  #   required: false
-  #   description: "Test pod-to-pod connectivity across nodes"
-  #   manifests:
-  #     - name: connectivity-test-resources
-  #       namespace: default
-  #       files:
-  #         - manifests/nginx.yaml
-  #         - manifests/busybox.yaml
-  #   actions:
-  #     onDeploy:
-  #       after:
-  #         - wait:
-  #             cluster:
-  #               kind: Deployment
-  #               condition: available
-  #               name: nginx
-  #               namespace: default
-  #           maxTotalSeconds: 60
-  #           description: "Wait for nginx deployment to be ready"
-  #         - wait:
-  #             cluster:
-  #               kind: Pod
-  #               condition: Ready
-  #               name: busybox
-  #               namespace: default
-  #           maxTotalSeconds: 60
-  #           description: "Wait for busybox pod to be ready"
-  #         - cmd: |
-  #             echo "Testing connectivity between pods across nodes..."
-  #             if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
-  #               echo "✅ Connectivity test PASSED - HTTP 200 received"
-  #               echo "Pods are running on the following nodes:"
-  #               ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
-  #               ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
-  #             else
-  #               echo "❌ Connectivity test FAILED - HTTP 200 not received"
-  #               exit 1
-  #             fi
-  #           description: "Test pod-to-pod connectivity"
-  #         - cmd: |
-  #             echo "Cleaning up test resources..."
-  #             ./zarf tools kubectl delete deployment nginx -n default --ignore-not-found=true
-  #             ./zarf tools kubectl delete service nginx -n default --ignore-not-found=true
-  #             ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
-  #           description: "Clean up connectivity test resources"
+  - name: connectivity-test
+    required: false
+    description: "Test pod-to-pod connectivity across nodes"
+    manifests:
+      - name: connectivity-test-resources
+        namespace: default
+        files:
+          - manifests/nginx.yaml
+          - manifests/busybox.yaml
+    actions:
+      onDeploy:
+        after:
+          - wait:
+              cluster:
+                kind: Deployment
+                condition: available
+                name: nginx
+                namespace: default
+            maxTotalSeconds: 60
+            description: "Wait for nginx deployment to be ready"
+          - wait:
+              cluster:
+                kind: Pod
+                condition: Ready
+                name: busybox
+                namespace: default
+            maxTotalSeconds: 60
+            description: "Wait for busybox pod to be ready"
+          - cmd: |
+              echo "Testing connectivity between pods across nodes..."
+              if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
+                echo "✅ Connectivity test PASSED - HTTP 200 received"
+                echo "Pods are running on the following nodes:"
+                ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
+                ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
+              else
+                echo "❌ Connectivity test FAILED - HTTP 200 not received"
+                exit 1
+              fi
+            description: "Test pod-to-pod connectivity"
+          - cmd: |
+              echo "Cleaning up test resources..."
+              ./zarf tools kubectl delete deployment nginx -n default --ignore-not-found=true
+              ./zarf tools kubectl delete service nginx -n default --ignore-not-found=true
+              ./zarf tools kubectl delete pod busybox -n default --ignore-not-found=true
+            description: "Clean up connectivity test resources"
 
-  # - name: calico-airgap-images
-  #   required: true
-  #   only:
-  #     flavor: airgap
-  #   description: "Load the airgap images for Calico into Docker"
-  #   import:
-  #     path: airgap/calico
-  #     name: calico-airgap-images
+  - name: calico-airgap-images
+    required: true
+    only:
+      flavor: airgap
+    description: "Load the airgap images for Calico into Docker"
+    import:
+      path: airgap/calico
+      name: calico-airgap-images

@@ -9,12 +9,11 @@
   "packageRules": [
     {
       "matchFileNames": [
-        "chart/**",
         "**/zarf.yaml",
         "values/*.yaml"
       ],
-      "groupName": "dev-stack",
-      "commitMessageTopic": "dev-stack",
+      "groupName": "k3d-calico",
+      "commitMessageTopic": "k3d-calico",
       "matchPackageNames": [
         "!rancher/k3s"
       ]

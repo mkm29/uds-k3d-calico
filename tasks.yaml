@@ -57,6 +57,7 @@ tasks:
           fi
 
   - name: validate
+    description: "Validate the uds-k3d-calico package"
     actions:
       - task: validate-coredns
       - cmd: uds zarf tools download-init --no-progress
@@ -64,11 +65,13 @@ tasks:
       - task: validate-zarf-init
 
   - name: validate-airgap
+    description: "Validate the uds-k3d-calico package in airgap mode"
     actions:
       - task: validate-coredns
       - task: validate-zarf-init
 
   - name: validate-coredns
+    description: "Validate CoreDNS is up and resolving *.uds.dev"
     actions:
       - description: Validate coredns is up
         wait:
@@ -90,6 +93,7 @@ tasks:
           fi
 
   - name: validate-zarf-init
+    description: "Validate zarf init"
     actions:
       - description: Validate zarf init
         cmd: |
@@ -98,6 +102,7 @@ tasks:
           uds zarf init --confirm --no-progress
 
   - name: build-airgap-package
+    description: "Build the airgap package for uds-k3d-calico"
     actions:
       - description: Build the airgap package
         cmd: |
@@ -108,12 +113,14 @@ tasks:
         task: clean-airgap-images
 
   - name: deploy-airgap-package
+    description: "Deploy the airgap package for uds-k3d-calico"
     actions:
       - description: Deploy the airgap package
         cmd: |
           uds zarf package deploy zarf-package-uds-k3d-calico-${ARCH}-*.tar.zst --no-progress --confirm
 
   - name: clean-airgap-images
+    description: "Clean up airgap images after deployment"
     actions:
       - description: Remove airgap images
         cmd: |
@@ -122,12 +129,29 @@ tasks:
           rm airgap/calico/*.tar
           rm airgap/calico/*.tar.zst
 
-  # - name: build-image
-  #   actions:
-  #     - description: Build the custom k3s image
-  #       cmd: docker build -t ${IMAGE_NAME}:${VERSION} --build-arg K3S_TAG=${VERSION} docker/
-
-  # - name: publish-image
-  #   actions:
-  #     - description: Publish the custom k3s image
-  #       cmd: docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag ${IMAGE_NAME}:${VERSION} docker
+  - name: connectivity-test
+    required: false
+    description: "Test connectivity across nodes"
+    actions:
+      - description: "Deploy connectivity test resources"
+        cmd: |
+          ./zarf tools kubectl apply -f manifests/nginx.yaml
+          ./zarf tools kubectl apply -f manifests/busybox.yaml
+          ./zarf tools kubectl wait --for=condition=available --timeout=60s -n default deployment/nginx
+          ./zarf tools kubectl wait --for=condition=ready --timeout=60s -n default pod/busybox
+      - description: "Test pod-to-pod connectivity"
+        cmd: |
+          echo "Testing connectivity between pods across nodes..."
+          if ./zarf tools kubectl exec -n default busybox -- wget --spider -S http://nginx.default.svc.cluster.local 2>&1 | grep "HTTP/" | grep -q "200"; then
+            echo "✅ Connectivity test PASSED - HTTP 200 received"
+            echo "Pods are running on the following nodes:"
+            ./zarf tools kubectl get pod busybox -o jsonpath='{.spec.nodeName}' && echo " <- busybox"
+            ./zarf tools kubectl get pods -l app=nginx -o jsonpath='{.items[0].spec.nodeName}' && echo " <- nginx"
+          else
+            echo "❌ Connectivity test FAILED - HTTP 200 not received"
+          fi
+      - description: "Clean up connectivity test resources"
+        cmd: |
+          echo "Cleaning up test resources..."
+          ./zarf tools kubectl delete -f manifests/nginx.yaml --ignore-not-found=true
+          ./zarf tools kubectl delete -f manifests/busybox.yaml default --ignore-not-found=true

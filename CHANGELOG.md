@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.14.2-calico](https://github.com/defenseunicorns/uds-k3d/compare/v0.14.2...v0.14.2-calico) (2025-06-26)
+## [Unreleased]
+
+### Bug Fixes
+
+* Fix typo in variable names: `KUBERNETEDS_SVC_ENDPOINT_HOST` and `KUBERNETEDS_SVC_ENDPOINT_PORT` to `KUBERNETES_SVC_ENDPOINT_HOST` and `KUBERNETES_SVC_ENDPOINT_PORT`
+
+## [0.14.3-calico](https://github.com/defenseunicorns/uds-k3d/compare/v0.14.2...v0.14.3-calico) (2025-06-26)
 
 
 ### Features
@@ -36,8 +42,8 @@ All notable changes to this project will be documented in this file.
 
 ### Technical Changes
 
-* Deployed Calico using official Helm chart (v3.30.2) from Tigera repository
-* Added `install-calico` component that uses Helm to deploy Calico with custom values
+* Deploy Calico using official Tigera Operator Helm chart (v3.30.2) from https://docs.tigera.io/calico/charts
+* Added `install-calico` component that uses Helm to deploy tigera-operator with custom values from `values/calico-values.yaml`
 * Added `verify-calico-connectivity` component to verify BPF configuration after deployment
 * TLS SANs are now configurable via `EXTRA_TLS_SANS` variable (default: `127.0.0.1`), replacing hardcoded values
 * Configured Felix with `bpfConnectTimeLoadBalancing: Disabled` and `bpfExternalServiceMode: Tunnel`
