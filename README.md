@@ -1,11 +1,11 @@
-# UDS k3d Calico Environment
+# UDS k3d Calico Zarf Package
 
 > [!IMPORTANT]
 > This package should only be used for development and testing purposes. It is not intended for production use and all data is overwritten when the package is re-deployed.
 
 This zarf package serves as a universal dev (local & remote) and test environment for testing [UDS Core](https://github.com/defenseunicorns/uds-core), individual UDS Capabilities, and UDS capabilities aggregated via the [UDS CLI](https://github.com/defenseunicorns/uds-cli).
 
-- [UDS k3d Calico Environment](#uds-k3d-calico-environment)
+- [UDS k3d Calico Zarf Package](#uds-k3d-calico-zarf-package)
   - [Overview](#overview)
   - [Prerequisites](#prerequisites)
     - [System Requirements](#system-requirements)
@@ -77,121 +77,86 @@ The UDS k3d Calico package creates a k3d cluster with the following features:
 
 ```mermaid
 graph TB
-    subgraph "UDS k3d Calico Cluster"
-        subgraph "Control Plane"
-            K3S["K3s Server<br/>(uds-calico-server-0)"]
-            APISERVER["kube-apiserver"]
-            ETCD["etcd"]
-        end
-
-        subgraph "Worker Nodes"
-            AGENT0["k3d-uds-calico-agent-0"]
-            AGENT1["k3d-uds-calico-agent-1"]
-        end
-
-        subgraph "Calico Components"
-            subgraph "Tigera Operator"
-                TO["Tigera Operator<br/>(tigera-operator namespace)"]
-            end
-
-            subgraph "Calico System"
-                TYPHA["Typha<br/>(Datastore cache)"]
-                CC["calico-controllers<br/>(Policy, IPAM)"]
-                CN0["calico-node<br/>(Felix + BIRD + eBPF)"]
-                CN1["calico-node<br/>(Felix + BIRD + eBPF)"]
-                CN2["calico-node<br/>(Felix + BIRD + eBPF)"]
-            end
-
-            subgraph "Calico API"
-                CAPI["Calico API Server<br/>(calico-apiserver namespace)"]
-            end
-        end
-
-        subgraph "Networking Stack"
-            COREDNS["CoreDNS<br/>(*.uds.dev resolution)"]
-            FLANNEL["Flannel CNI<br/>(Initial connectivity)"]
-            NGINX["NGINX<br/>(Load Balancer)"]
-        end
-
-        subgraph "Storage & Services"
-            METALLB["MetalLB<br/>(LoadBalancer Services)"]
-            MINIO["MinIO<br/>(S3-compatible storage)"]
-            LOCALPATH["local-path-rwx<br/>(ReadWriteMany storage)"]
-        end
-
-        subgraph "UDS Core Integration"
-            ISTIO["Istio Gateways<br/>(admin/tenant)"]
-        end
+    subgraph cluster[UDS k3d Calico Cluster]
+        K3S[K3s Server<br/>uds-calico-server-0]
+        AGENT0[k3d-uds-calico-agent-0]  
+        AGENT1[k3d-uds-calico-agent-1]
+        
+        TO[Tigera Operator<br/>tigera-operator namespace]
+        TYPHA[Typha<br/>Datastore cache]
+        CC[calico-kube-controllers<br/>Policy & IPAM]
+        CN0[calico-node on server-0]
+        CN1[calico-node on agent-0]
+        CN2[calico-node on agent-1]
+        CAPI[Calico API Server]
+        
+        FLANNEL[Flannel CNI<br/>Initial connectivity]
+        COREDNS[CoreDNS]
+        NGINX[NGINX Load Balancer]
+        ISTIO[Istio Gateways]
     end
 
-    K3S --> APISERVER
-    APISERVER --> ETCD
-    TO --> APISERVER
-    TO --> CN0
-    TO --> CN1
-    TO --> CN2
-    TO --> TYPHA
-    TO --> CC
-    TO --> CAPI
+    K3S -->|manages| TO
+    TO -->|deploys| TYPHA
+    TO -->|deploys| CC
+    TO -->|deploys| CN0
+    TO -->|deploys| CN1
+    TO -->|deploys| CN2
+    TO -->|deploys| CAPI
+    
+    CN0 -->|runs on| K3S
+    CN1 -->|runs on| AGENT0
+    CN2 -->|runs on| AGENT1
+    
+    CN0 -->|syncs| TYPHA
+    CN1 -->|syncs| TYPHA
+    CN2 -->|syncs| TYPHA
+    TYPHA -->|updates| CC
+    
+    FLANNEL -->|initial CNI| K3S
+    CN0 -->|networking| COREDNS
+    NGINX -->|routes| ISTIO
 
-    CN0 --> AGENT0
-    CN1 --> AGENT1
-    CN2 --> K3S
-
-    TYPHA --> CC
-    CN0 --> TYPHA
-    CN1 --> TYPHA
-    CN2 --> TYPHA
-
-    FLANNEL --> K3S
-    CN0 --> COREDNS
-    CN1 --> COREDNS
-    CN2 --> COREDNS
-    NGINX --> ISTIO
-
-    style TO fill:#ff6f00,stroke:#e65100,stroke-width:2px,color:#fff
-    style TYPHA fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
-    style CC fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
-    style CN0 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
-    style CN1 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
-    style CN2 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
-    style CAPI fill:#ffa726,stroke:#e65100,stroke-width:2px,color:#fff
-    style K3S fill:#326ce5,stroke:#1e88e5,stroke-width:2px,color:#fff
-    style ISTIO fill:#466bb0,stroke:#1a237e,stroke-width:2px,color:#fff
-    style FLANNEL fill:#00acc1,stroke:#006064,stroke-width:2px,color:#fff
+    style TO fill:#ff6f00
+    style TYPHA fill:#ff9800
+    style CC fill:#ff9800
+    style CN0 fill:#ff9800
+    style CN1 fill:#ff9800
+    style CN2 fill:#ff9800
+    style CAPI fill:#ffa726
+    style K3S fill:#326ce5
+    style FLANNEL fill:#00acc1
 ```
 
 ### Calico Component Architecture
 
 ```mermaid
 graph LR
-    subgraph "Each Node"
-        subgraph "calico-node Pod"
-            FELIX["Felix<br/>(Policy Engine)"]
-            BIRD["BIRD<br/>(BGP Daemon)"]
-            CONFD["confd<br/>(Config Manager)"]
-            CNI["Calico CNI Plugin"]
-            IPAM["Calico IPAM"]
+    subgraph node[Each Node]
+        subgraph pod[calico-node Pod]
+            FELIX[Felix<br/>Policy Engine]
+            BIRD[BIRD<br/>BGP Daemon]
+            CONFD[confd<br/>Config Manager]
+            CNI[Calico CNI Plugin]
+            IPAM[Calico IPAM]
         end
-
-        subgraph "Kernel/eBPF"
-            BPF["eBPF Programs<br/>(Dataplane)"]
-            NETFILTER["Netfilter<br/>(iptables rules)"]
-            ROUTES["Kernel Routes"]
+        
+        subgraph kernel[Kernel/eBPF]
+            BPF[eBPF Programs]
+            NETFILTER[iptables]
+            ROUTES[Kernel Routes]
         end
-
-        subgraph "Container Runtime"
-            CONTAINERD["containerd"]
-            PODS["Pod Network<br/>Namespaces"]
-        end
+        
+        CONTAINERD[containerd]
+        PODS[Pod Namespaces]
     end
-
-    subgraph "Cluster Services"
-        TYPHA2["Typha<br/>(Datastore Proxy)"]
-        ETCD2["etcd<br/>(Kubernetes Datastore)"]
-        APISERVER2["kube-apiserver"]
+    
+    subgraph control[Control Plane]
+        TYPHA2[Typha]
+        ETCD2[etcd]
+        APISERVER2[kube-apiserver]
     end
-
+    
     FELIX --> BPF
     FELIX --> NETFILTER
     FELIX --> TYPHA2
@@ -203,13 +168,13 @@ graph LR
     CNI --> FELIX
     CONTAINERD --> CNI
     PODS --> BPF
-
+    
     TYPHA2 --> ETCD2
     TYPHA2 --> APISERVER2
-
-    style FELIX fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
-    style BPF fill:#ff5722,stroke:#bf360c,stroke-width:2px,color:#fff
-    style TYPHA2 fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    
+    style FELIX fill:#ff9800
+    style BPF fill:#ff5722
+    style TYPHA2 fill:#ff9800
 ```
 
 ## Configuration
@@ -348,6 +313,61 @@ The airgap flavor includes all required images:
 See [Airgap Documentation](docs/AIRGAP.md) for more details.
 
 ### Calico Architecture Overview
+
+Based on the [official Calico architecture](https://docs.tigera.io/calico/latest/reference/architecture/overview), here's how Calico integrates with our k3d cluster:
+
+```mermaid
+graph TB
+    subgraph k3d[k3d Cluster]
+        subgraph master[Control Plane - Server Node]
+            ETCD[etcd]
+            API[kube-apiserver]
+            KP[kube-proxy]
+        end
+        
+        subgraph nodes[Worker Nodes]
+            NODE1[Agent-0]
+            NODE2[Agent-1]
+        end
+    end
+    
+    subgraph calico[Calico Components]
+        subgraph operator[Tigera Operator]
+            TO[tigera-operator]
+        end
+        
+        subgraph system[calico-system]
+            TYPHA[typha]
+            KCC[kube-controllers]
+            CN1[calico-node DaemonSet]
+        end
+        
+        subgraph apiserver[calico-apiserver]
+            CAPI[API Server]
+        end
+    end
+    
+    API -->|watches| TO
+    TO -->|creates/manages| TYPHA
+    TO -->|creates/manages| KCC
+    TO -->|creates/manages| CN1
+    TO -->|creates/manages| CAPI
+    
+    TYPHA -->|syncs| API
+    TYPHA -->|syncs| ETCD
+    CN1 -->|gets data from| TYPHA
+    KCC -->|manages| API
+    
+    CN1 -->|runs on each| NODE1
+    CN1 -->|runs on each| NODE2
+    CN1 -->|runs on each| master
+    
+    style TO fill:#ff6f00
+    style TYPHA fill:#ff9800
+    style KCC fill:#ff9800
+    style CN1 fill:#ff9800
+    style CAPI fill:#ffa726
+```
 
 Calico consists of several key components that work together to provide networking and security:
 
