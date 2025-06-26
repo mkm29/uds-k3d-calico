@@ -58,7 +58,7 @@ The UDS k3d Calico package creates a k3d cluster with the following features:
 
 - **Memory**: 16GB RAM recommended
 - **CPU**: 4+ cores recommended
-- **Disk**: 50GB+ available space
+- **Disk**: 10GB+ available space
 - **Kernel**: Linux kernel 5.3+ (for eBPF dataplane)
 
 ## Architecture
