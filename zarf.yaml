@@ -229,7 +229,7 @@ components:
       - name: tigera-operator
         namespace: tigera-operator
         url: https://docs.tigera.io/calico/charts
-        version: ${ZARF_VAR_TIGERA_OPERATOR_VERSION}
+        version: v3.30.2
         valuesFiles:
           - "values/calico-values.yaml"
         variables:
