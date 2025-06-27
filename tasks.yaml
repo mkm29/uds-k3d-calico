@@ -135,8 +135,7 @@ tasks:
     actions:
       - description: "Deploy connectivity test resources"
         cmd: |
-          ./zarf tools kubectl apply -f manifests/nginx.yaml
-          ./zarf tools kubectl apply -f manifests/busybox.yaml
+          ./zarf tools kubectl apply -f manifests/connectivity/
           ./zarf tools kubectl wait --for=condition=available --timeout=60s -n default deployment/nginx
           ./zarf tools kubectl wait --for=condition=ready --timeout=60s -n default pod/busybox
       - description: "Test pod-to-pod connectivity"
@@ -153,5 +152,4 @@ tasks:
       - description: "Clean up connectivity test resources"
         cmd: |
           echo "Cleaning up test resources..."
-          ./zarf tools kubectl delete -f manifests/nginx.yaml
-          ./zarf tools kubectl delete -f manifests/busybox.yaml
+          ./zarf tools kubectl delete -f manifests/connectivity/

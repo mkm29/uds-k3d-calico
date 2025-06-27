@@ -1,0 +1,7 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: metallb-ip-pool
+spec:
+  addresses:
+    - "###ZARF_VAR_BASE_IP###.200-###ZARF_VAR_BASE_IP###.215"

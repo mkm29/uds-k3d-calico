@@ -47,6 +47,9 @@ The UDS k3d Calico package creates a k3d cluster with the following features:
 - **Integration with UDS Core** including Istio service mesh support
 - **DNS resolution** for `*.uds.dev` domains via CoreDNS overrides
 - **Configurable network CIDRs** for subnet, pod, and service networks
+- **MetalLB Load Balancer** for LoadBalancer-type services (required by Istio gateways)
+- **NGINX Ingress Controller** for additional ingress options beyond Traefik
+- **MinIO Object Storage** for S3-compatible storage needs in development
 
 ## Prerequisites
 
@@ -94,6 +97,9 @@ graph TB
                 COREDNS[CoreDNS<br/>DNS for *.uds.dev]
                 TRAEFIK[Traefik<br/>Ingress Controller]
                 METRICS[Metrics Server]
+                METALLB[MetalLB<br/>Load Balancer]
+                NGINX[NGINX<br/>Ingress Controller]
+                MINIO[MinIO<br/>Object Storage]
             end
             
             subgraph calico_mgmt[Calico Management]
@@ -159,10 +165,14 @@ The following variables can be configured when deploying the UDS k3d Calico pack
 | `EXTRA_TLS_SANS` | Additional TLS SANs for the cluster (comma-separated) | `string` | `"127.0.0.1"` | no |
 | `DOCKER_HUB_USERNAME` | Username for Docker Hub authentication | `string` | `""` | no |
 | `DOCKER_HUB_PASSWORD` | Password for Docker Hub authentication | `string` | `""` | no |
+| `BASE_IP` | Base IP address for MetalLB pool (auto-detected) | `string` | `""` | no |
 
 ### Components
 
 The following components are available in the UDS k3d Calico package:
+
+> [!NOTE]
+> The `dev-stack` and `metallb-pool` components include MetalLB, NGINX, and MinIO to provide essential services for UDS Core components like Istio, which require LoadBalancer-type services for their gateways.
 
 | Name | Description | Required |
 |------|-------------|:--------:|
@@ -174,6 +184,8 @@ The following components are available in the UDS k3d Calico package:
 | `verify-calico-connectivity` | Verify Calico BPF configuration and connectivity | yes |
 | `connectivity-test` | Test pod-to-pod connectivity across nodes | no |
 | `calico-airgap-images` | Load the airgap images for Calico into Docker | yes¹ |
+| `dev-stack` | Install MetalLB, NGINX, MinIO, and other developer tools | yes |
+| `metallb-pool` | Configure MetalLB IP address pool and L2 advertisement | yes |
 
 ¹ Only required when using the `airgap` flavor
 
@@ -269,6 +281,9 @@ The airgap flavor includes all required images:
 
 - k3d/K3s base images
 - Calico CNI images (Tigera Operator, Calico components)
+- MetalLB images for load balancing
+- NGINX ingress controller images
+- MinIO object storage images
 
 See [Airgap Documentation](docs/AIRGAP.md) for more details.
 

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+* Re-add MetalLB load balancer support to provide LoadBalancer-type services required by UDS Core components (Istio gateways)
+* Re-add NGINX ingress controller as an additional ingress option alongside Traefik
+* Re-add MinIO object storage for S3-compatible storage needs in development environments
+* Update MetalLB manifests to use Kustomize for better resource management
+
 ### Bug Fixes
 
 * Fix typo in variable names: `KUBERNETEDS_SVC_ENDPOINT_HOST` and `KUBERNETEDS_SVC_ENDPOINT_PORT` to `KUBERNETES_SVC_ENDPOINT_HOST` and `KUBERNETES_SVC_ENDPOINT_PORT`
