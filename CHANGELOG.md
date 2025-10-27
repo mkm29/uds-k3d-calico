@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 * Fix typo in variable names: `KUBERNETEDS_SVC_ENDPOINT_HOST` and `KUBERNETEDS_SVC_ENDPOINT_PORT` to `KUBERNETES_SVC_ENDPOINT_HOST` and `KUBERNETES_SVC_ENDPOINT_PORT`
 
-## [0.14.3-calico](https://github.com/defenseunicorns/uds-k3d/compare/v0.14.2...v0.14.3-calico) (2025-06-26)
+## [0.2.0-uds.0](https://github.com/defenseunicorns/uds-k3d/compare/v0.14.2...v0.2.0-uds.0) (2025-06-26)
 
 
 ### Features

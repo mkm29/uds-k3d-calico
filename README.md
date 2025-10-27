@@ -212,7 +212,7 @@ uds run destroy --set CLUSTER_NAME=uds-calico
 
 <!-- x-release-please-start-version -->
 
-`uds zarf package deploy oci://defenseunicorns/0.14.3-calico`
+`uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0`
 
 <!-- x-release-please-end -->
 
@@ -220,31 +220,31 @@ uds run destroy --set CLUSTER_NAME=uds-calico
 
 ```bash
 # Deploy with custom K3s version
-uds zarf package deploy oci://defenseunicorns/0.14.3-calico \
+uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0 \
   --set K3D_IMAGE=rancher/k3s:v1.32.5-k3s1
 
 # Deploy with additional ports
-uds zarf package deploy oci://defenseunicorns/0.14.3-calico \
+uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0 \
   --set K3D_EXTRA_ARGS="-p 8080:8080@server:*" \
   --set NGINX_EXTRA_PORTS="[8080]"
 
 # Deploy with custom cluster sizing
-uds zarf package deploy oci://defenseunicorns/0.14.3-calico \
+uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0 \
   --set NUMBER_OF_SERVERS=3 \
   --set NUMBER_OF_WORKERS=4
 
 # Deploy with custom network CIDRs
-uds zarf package deploy oci://defenseunicorns/0.14.3-calico \
+uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0 \
   --set SUBNET_CIDR="10.10.0.0/16" \
   --set POD_CIDR="10.44.0.0/16" \
   --set SERVICE_CIDR="10.97.0.0/16"
 
 # Deploy with additional TLS SANs for external access
-uds zarf package deploy oci://defenseunicorns/0.14.3-calico \
+uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0 \
   --set EXTRA_TLS_SANS="192.168.1.100,my-k3s.example.com"
 
 # Deploy with Docker Hub authentication (optional)
-uds zarf package deploy oci://defenseunicorns/0.14.3-calico \
+uds zarf package deploy oci://defenseunicorns/0.2.0-uds.0 \
   --set DOCKER_HUB_USERNAME="myusername" \
   --set DOCKER_HUB_PASSWORD="mypassword"
 ```

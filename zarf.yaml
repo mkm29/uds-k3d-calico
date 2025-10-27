@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/mkm29/uds-k3d-calico.git
   yolo: true
   # x-release-please-start-version
-  version: "0.14.3-calico"
+  version: "0.2.0-uds.0"
   # x-release-please-end
 
 variables:
@@ -29,7 +29,7 @@ variables:
 
   - name: K3D_IMAGE
     description: "K3d image to use"
-    default: "rancher/k3s:v1.32.5-k3s1"
+    default: "rancher/k3s:v1.33.5-k3s1"
 
   - name: K3D_EXTRA_ARGS
     description: "Optionally pass k3d arguments to the default"
@@ -70,7 +70,7 @@ variables:
 
   - name: TIGERA_OPERATOR_VERSION
     description: "Version of the Tigera Operator to use"
-    default: "v3.30.2"
+    default: "v3.31.0"
 
 components:
   - name: destroy-cluster
@@ -82,36 +82,36 @@ components:
           - cmd: k3d cluster delete ${ZARF_VAR_CLUSTER_NAME}
             description: "Destroy the cluster"
 
-  - name: k3d-airgap-images
-    required: true
-    only:
-      flavor: airgap
-    description: "Load the airgap images for k3d into Docker"
-    import:
-      path: airgap/k3d
-      name: k3d-airgap-images
+  # - name: k3d-airgap-images
+  #   required: true
+  #   only:
+  #     flavor: airgap
+  #   description: "Load the airgap images for k3d into Docker"
+  #   import:
+  #     path: airgap/k3d
+  #     name: k3d-airgap-images
 
-  - name: create-cluster-airgap
-    required: true
-    only:
-      flavor: airgap
-    actions:
-      onDeploy:
-        before:
-          - cmd: |
-              echo ""
-              echo "###################################################"
-              echo "#                                                 #"
-              echo "#      PACKAGE BEING DEPLOYED IN AIRGAP MODE      #"
-              echo "#    THIS IS NOT MEANT TO BE USED IN PRODUCTION   #"
-              echo "#                                                 #"
-              echo "###################################################"
-              echo ""
-          - cmd: echo "true"
-            description: "Set AIRGAP_MODE to true"
-            mute: true
-            setVariables:
-              - name: AIRGAP_MODE
+  # - name: create-cluster-airgap
+  #   required: true
+  #   only:
+  #     flavor: airgap
+  #   actions:
+  #     onDeploy:
+  #       before:
+  #         - cmd: |
+  #             echo ""
+  #             echo "###################################################"
+  #             echo "#                                                 #"
+  #             echo "#      PACKAGE BEING DEPLOYED IN AIRGAP MODE      #"
+  #             echo "#    THIS IS NOT MEANT TO BE USED IN PRODUCTION   #"
+  #             echo "#                                                 #"
+  #             echo "###################################################"
+  #             echo ""
+  #         - cmd: echo "true"
+  #           description: "Set AIRGAP_MODE to true"
+  #           mute: true
+  #           setVariables:
+  #             - name: AIRGAP_MODE
 
   - name: create-cluster
     required: true
@@ -145,13 +145,6 @@ components:
               VOLUME_MOUNT=""
               REGISTRY_CONFIG=""
 
-              # Set up airgap volume if in airgap mode
-              if [ "${ZARF_VAR_AIRGAP_MODE}" = "true" ]; then
-                # renovate: datasource=docker depName=ghcr.io/k3d-io/k3d-tools
-                export K3D_HELPER_IMAGE_TAG=5.8.3
-                VOLUME_MOUNT="--volume k3s-airgap-images:/var/lib/rancher/k3s/agent/images"
-              fi
-
               # Add registry config only if registries.yaml exists
               if [ -f "registries.yaml" ]; then
                 REGISTRY_CONFIG="--registry-config ${PWD}/registries.yaml"
@@ -167,7 +160,7 @@ components:
               --k3s-arg "--cluster-cidr=${ZARF_VAR_POD_CIDR}@server:*" \
               --k3s-arg "--service-cidr=${ZARF_VAR_SERVICE_CIDR}@server:*" \
               --k3s-arg "--disable=local-storage@server:*" \
-               --k3s-arg "--disable=metrics-server@server:*" \
+              --k3s-arg "--disable=metrics-server@server:*" \
               --servers ${ZARF_VAR_NUMBER_OF_SERVERS} \
               --agents ${ZARF_VAR_NUMBER_OF_AGENTS} \
               --subnet ${ZARF_VAR_SUBNET_CIDR} \
@@ -229,7 +222,7 @@ components:
       - name: tigera-operator
         namespace: tigera-operator
         url: https://docs.tigera.io/calico/charts
-        version: v3.30.2
+        version: v3.31.0
         valuesFiles:
           - "values/calico-values.yaml"
         variables:
@@ -239,6 +232,8 @@ components:
           - name: KUBERNETEDS_SVC_ENDPOINT_PORT
             description: "Kubernetes Service Endpoint Port"
             path: kubernetesServiceEndpoint.port
+    # images:
+    #   - quay.io/tigera/operator:v1.40.0
 
   - name: verify-calico-connectivity
     required: true
@@ -263,15 +258,6 @@ components:
               ./zarf tools kubectl get pods -n calico-system -o wide
             description: "Check Calico pod distribution"
 
-  - name: calico-airgap-images
-    required: true
-    only:
-      flavor: airgap
-    description: "Load the airgap images for Calico into Docker"
-    import:
-      path: airgap/calico
-      name: calico-airgap-images
-
   - name: dev-stack
     required: true
     description: "Install MetalLB, NGINX, Minio, local-path-rwx and Ensure MachineID to meet UDS developer needs without later config changes"
@@ -295,9 +281,7 @@ components:
       - name: uds-dev-stack
         namespace: uds-dev-stack
         localPath: chart
-        # x-release-please-start-version
-        version: 0.14.2
-        # x-release-please-end
+        version: 0.18.0
         valuesFiles:
           - "values/dev-stack-values.yaml"
         variables:
@@ -311,13 +295,33 @@ components:
         url: https://charts.min.io/
         valuesFiles:
           - "values/minio-values.yaml"
-
-  - name: metallb-pool
-    required: true
-    description: "Create a MetalLB IP pool and L2 advertisement for the cluster"
     manifests:
     - name: metallb-config
       namespace: metallb-system
       kustomizations:
         - manifests/metallb
-        
+    # images:
+    #   - cgr.dev/chainguard/wolfi-base:latest
+    #   - quay.io/frrouting/frr:9.1.3
+    #   - quay.io/metallb/controller:v0.15.2
+    #   - quay.io/metallb/speaker:v0.15.2
+    #   - quay.io/minio/mc:RELEASE.2025-05-21T01-59-54Z
+    #   - quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    #   - quay.io/nginx/nginx-unprivileged:1.28.0-alpine
+    #   - rancher/local-path-provisioner:v0.0.31
+    #   - registry.k8s.io/pause:3.10
+      # Cosign artifacts for images - dev-stack
+      # - cgr.dev/chainguard/wolfi-base:sha256-0d1673dd55e8b7535fea5191c8337f0c18f46d55ed9020b9dcc1a2e17c550680.sig
+      # - cgr.dev/chainguard/wolfi-base:sha256-0d1673dd55e8b7535fea5191c8337f0c18f46d55ed9020b9dcc1a2e17c550680.att
+      # - quay.io/metallb/controller:sha256-417cdb6d6f9f2c410cceb84047d3a4da3bfb78b5ddfa30f4cf35ea5c667e8c2e.sig
+      # - quay.io/metallb/speaker:sha256-260c9406f957c0830d4e6cd2e9ac8c05e51ac959dd2462c4c2269ac43076665a.sig
+      # - registry.k8s.io/pause:sha256-ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a.sig
+
+  # - name: metallb-pool
+  #   required: true
+  #   description: "Create a MetalLB IP pool and L2 advertisement for the cluster"
+  #   manifests:
+  #   - name: metallb-config
+  #     namespace: metallb-system
+  #     kustomizations:
+  #       - manifests/metallb

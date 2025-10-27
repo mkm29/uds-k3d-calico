@@ -13,10 +13,10 @@ installation:
       nodeSelector: all()
 
 defaultFelixConfiguration:
-  enabled: true
-  bpfConnectTimeLoadBalancing: "Disabled"
-  bpfExternalServiceMode: "Tunnel"  # Use Tunnel mode instead of DSR when kube-proxy is present
-  bpfKubeProxyIptablesCleanupEnabled: false  # Don't clean up kube-proxy rules
+  enabled: true  # Required to override BPF settings for k3d environment
+  bpfConnectTimeLoadBalancing: "Disabled"  # Prevents conflicts with kube-proxy in k3d
+  bpfExternalServiceMode: "Tunnel"  # DSR not compatible with k3d's containerized network
+  bpfKubeProxyIptablesCleanupEnabled: false  # k3d requires kube-proxy coexistence
 
 certs:
   node:

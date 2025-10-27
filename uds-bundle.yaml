@@ -7,25 +7,35 @@ metadata:
   name: k3d-core-calico-dev
   description: A UDS bundle for deploying k3d with Calico and UDS Core on a development cluster
   # x-release-please-start-version
-  version: "0.44.0"
+  version: "0.2.0-uds.0"
   # x-release-please-end
 
 packages:
   - name: uds-k3d-calico-dev
-    path: ./zarf-package-uds-k3d-calico-arm64-0.14.3-calico.tar.zst
+    path: ./zarf-package-uds-k3d-calico-arm64-0.2.0-uds.0-upstream.tar.zst
     description: A UDS package for deploying k3d with Calico and UDS Core
-    ref: "0.14.3-calico"
+    ref: "0.2.0-uds.0"
 
   - name: init
     repository: ghcr.io/zarf-dev/packages/init
-    ref: v0.55.6
+    ref: v0.64.0
 
   - name: core-base
     repository: ghcr.io/defenseunicorns/packages/uds/core-base
-    ref: 0.45.0-upstream
+    ref: 0.54.1-upstream
     overrides:
       pepr-uds-core:
         module:
+          values:
+            - path: additionalIgnoredNamespaces
+              value:
+                - calico-system
+                - uds-dev-stack
+                - tigera-operator
+                - istio-system
+                - istio-admin-gateway
+                - istio-tenant-gateway
+                - metallb-system
           variables:
             - name: PEPR_WATCHER_MEMORY_REQUEST
               description: "Memory requests for the pepr watcher pod"
@@ -70,39 +80,39 @@ packages:
               description: "CPU limit for the Istio Proxy Sidecar"
               path: "global.proxy.resources.limits.cpu"
               default: "2000m"
-      istio-admin-gateway:
-        uds-istio-config:
-          variables:
-            - name: ADMIN_TLS_CERT
-              description: "The TLS cert for the admin gateway (must be base64 encoded)"
-              path: tls.cert
-            - name: ADMIN_TLS_KEY
-              description: "The TLS key for the admin gateway (must be base64 encoded)"
-              path: tls.key
-            - name: ADMIN_TLS1_2_SUPPORT
-              description: "Add support for TLS 1.2 on this gateway"
-              path: tls.supportTLSV1_2
-      istio-tenant-gateway:
-        uds-istio-config:
-          variables:
-            - name: TENANT_TLS_CERT
-              description: "The TLS cert for the tenant gateway (must be base64 encoded)"
-              path: tls.cert
-            - name: TENANT_TLS_KEY
-              description: "The TLS key for the tenant gateway (must be base64 encoded)"
-              path: tls.key
-            - name: TENANT_TLS1_2_SUPPORT
-              description: "Add support for TLS 1.2 on this gateway"
-              path: tls.supportTLSV1_2
-        gateway:
-          variables:
-            - name: TENANT_SERVICE_PORTS
-              description: "The ports that are exposed from the tenant gateway LoadBalancer (useful for non-HTTP(S) traffic)"
-              path: "service.ports"
+      # istio-admin-gateway:
+      #   uds-istio-config:
+      #     variables:
+      #       - name: ADMIN_TLS_CERT
+      #         description: "The TLS cert for the admin gateway (must be base64 encoded)"
+      #         path: tls.cert
+      #       - name: ADMIN_TLS_KEY
+      #         description: "The TLS key for the admin gateway (must be base64 encoded)"
+      #         path: tls.key
+      #       - name: ADMIN_TLS1_2_SUPPORT
+      #         description: "Add support for TLS 1.2 on this gateway"
+      #         path: tls.supportTLSV1_2
+      # istio-tenant-gateway:
+      #   uds-istio-config:
+      #     variables:
+      #       - name: TENANT_TLS_CERT
+      #         description: "The TLS cert for the tenant gateway (must be base64 encoded)"
+      #         path: tls.cert
+      #       - name: TENANT_TLS_KEY
+      #         description: "The TLS key for the tenant gateway (must be base64 encoded)"
+      #         path: tls.key
+      #       - name: TENANT_TLS1_2_SUPPORT
+      #         description: "Add support for TLS 1.2 on this gateway"
+      #         path: tls.supportTLSV1_2
+      #   gateway:
+      #     variables:
+      #       - name: TENANT_SERVICE_PORTS
+      #         description: "The ports that are exposed from the tenant gateway LoadBalancer (useful for non-HTTP(S) traffic)"
+      #         path: "service.ports"
 
   - name: core-identity-authorization
     repository: ghcr.io/defenseunicorns/packages/uds/core-identity-authorization
-    ref: 0.45.0-upstream
+    ref: 0.54.1-upstream
     overrides:
       keycloak:
         keycloak:
